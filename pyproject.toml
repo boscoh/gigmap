@@ -1,0 +1,28 @@
+[project]
+name = "gigmap"
+version = "0.1.0"
+description = "Show the Melbourne gig guide from beat.com.au in a table and on a map"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4",
+    "cyclopts>=4.25.3",
+    "fastapi",
+    "httpx",
+    "lxml",
+    "uvicorn[standard]",
+]
+
+[project.scripts]
+gigmap = "server:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["server"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- avoid text rendering issues on various platforms -->
+  <meta charset="utf-8"/>
+
+  <!-- prevent auto-zooming on mobile browsers -->
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <!-- Bootstrap -->
+  <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Title font: Anton, a condensed display face -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link
+      href="https://fonts.googleapis.com/css2?family=Anton&display=swap"
+      rel="stylesheet"
+  />
+
+  <!-- Font Awesome -->
+  <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css"
+      rel="stylesheet"
+  />
+
+  <!-- Pug template compiler -->
+  <script src="https://pugjs.org/js/pug.js"></script>
+  <script>
+      window.pug = require("pug");
+
+      function renderHtmlFromPug(str) {
+          const lines = str.replace(/^\n/, "").split("\n");
+          const minIndent = Math.min(
+              ...lines.filter((l) => l.trim()).map((l) => l.match(/^\s*/)[0].length),
+          );
+          return pug.render(lines.map((l) => l.slice(minIndent)).join("\n"), {doctype: 'html'});
+      }
+  </script>
+
+  <!-- Lodash -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.20/lodash.min.js"></script>
+
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+  <!-- Ky -->
+  <script type="module">
+      import ky from "https://unpkg.com/ky/distribution/index.js";
+      window.ky = ky;
+  </script>
+
+  <!-- Leaflet: the OSM embed supports one marker only, so use a slippy map -->
+  <link
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      rel="stylesheet"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+      html,
+      body {
+          height: 100%;
+      }
+
+      h1 {
+          font-family: "Anton", var(--bs-font-sans-serif);
+          font-weight: 400;
+          font-size: clamp(2.5rem, 5vw, 4rem);
+          letter-spacing: 0;
+      }
+
+      /* Outline title, in the spirit of the Beat logo. */
+      @supports (-webkit-text-stroke: 1px #212529) {
+          h1 {
+              color: transparent;
+              -webkit-text-stroke: 2.5px #212529;
+          }
+      }
+
+      .app-shell {
+          height: 100vh;
+      }
+
+      .gig-scroll {
+          overflow: auto;
+      }
+
+      .gig-scroll thead th {
+          position: sticky;
+          top: 0;
+          z-index: 1;
+      }
+
+      .gig-side {
+          display: flex;
+          flex-direction: column;
+      }
+
+      .gig-side .small {
+          font-size: 0.75rem;
+      }
+
+      .splitter {
+          display: none;
+          flex: 0 0 0.75rem;
+          justify-content: center;
+          cursor: col-resize;
+          touch-action: none;
+          user-select: none;
+      }
+
+      .splitter::before {
+          content: "";
+          width: 2px;
+          border-radius: 1px;
+          background: #dee2e6;
+      }
+
+      .splitter:hover::before {
+          background: #adb5bd;
+      }
+
+      .map-wrap {
+          position: relative;
+          flex: 1 1 auto;
+          min-height: 14rem;
+      }
+
+      #map {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          left: 0;
+          border-radius: 0.25rem;
+      }
+
+      .gig-popup {
+          width: 100%;
+          border-collapse: collapse;
+      }
+
+      .gig-popup td {
+          padding: 0.1rem 0.5rem 0 0;
+          vertical-align: top;
+      }
+
+      .gig-popup td:first-child {
+          white-space: nowrap;
+      }
+
+      .gig-popup-venue td {
+          padding-top: 0.4rem;
+      }
+
+      .sortable {
+          cursor: pointer;
+          user-select: none;
+      }
+
+      .sortable:hover {
+          color: #2c5282;
+      }
+
+      .gig-table .btn {
+          text-align: left;
+      }
+
+      .calendar {
+          flex: 0 0 auto;
+      }
+
+      .calendar-head {
+          gap: 0.25rem;
+      }
+
+      .calendar-grid {
+          display: grid;
+          grid-template-columns: repeat(7, 1.75rem);
+          gap: 2px;
+          margin-top: 0.25rem;
+      }
+
+      .calendar-weekday {
+          text-align: center;
+          color: var(--bs-secondary);
+          font-size: 0.7rem;
+      }
+
+      .calendar-day {
+          border: none;
+          background: none;
+          color: inherit;
+          text-align: center;
+          padding: 0.1rem 0.25rem;
+          border-radius: 0.25rem;
+          font-size: 0.8rem;
+          cursor: pointer;
+      }
+
+      .calendar-day:hover {
+          background: #e9ecef;
+      }
+
+      .calendar-empty {
+          cursor: default;
+      }
+
+      .calendar-empty:hover {
+          background: none;
+      }
+
+      .calendar-today {
+          font-weight: 600;
+      }
+
+      .calendar-selected,
+      .calendar-selected:hover {
+          background: var(--bs-primary);
+          color: var(--bs-white);
+      }
+
+      .calendar-past {
+          color: var(--bs-secondary);
+          opacity: 0.5;
+          cursor: default;
+      }
+
+      .calendar-past:hover {
+          background: none;
+      }
+
+      .gig-table {
+          table-layout: fixed;
+      }
+
+      .gig-table thead th {
+          background: #fff;
+          border-bottom: 1px solid #e9ecef;
+          color: #6c757d;
+          font-size: 0.68rem;
+          font-weight: 500;
+          letter-spacing: 0.06em;
+          padding: 0.4rem 0.5rem;
+          text-transform: uppercase;
+      }
+
+      .skeleton {
+          display: block;
+          height: 0.9rem;
+          border-radius: 0.25rem;
+          background: #e9ecef;
+          animation: skeleton-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes skeleton-pulse {
+          0%,
+          100% {
+              opacity: 1;
+          }
+          50% {
+              opacity: 0.45;
+          }
+      }
+
+      .gig-table a:not(.btn) {
+          color: #2c5282;
+          text-decoration: none;
+      }
+
+      .gig-table a:not(.btn):hover {
+          color: #16324f;
+      }
+
+      .gig-table a.gig-link {
+          margin-left: 0.25rem;
+          font-size: 0.7rem;
+          color: #adb5bd;
+          text-decoration: none;
+      }
+
+      .gig-table a.gig-link:hover {
+          color: #2c5282;
+      }
+
+      .gig-table tbody tr {
+          cursor: pointer;
+      }
+
+      @media (min-width: 992px) {
+          .gig-side {
+              flex: 0 0 var(--side-width, 50%);
+              min-width: 0;
+              overflow: auto;
+          }
+
+          .splitter {
+              display: flex;
+          }
+
+          .gig-scroll {
+              flex: 1 1 0;
+              min-width: 0;
+          }
+      }
+
+      @media (max-width: 991.98px) {
+          .app-shell {
+              height: auto;
+          }
+
+          .gig-scroll {
+              max-height: 75vh;
+          }
+
+          .map-wrap {
+              flex: 0 0 auto;
+              height: 22rem;
+          }
+
+          h1 {
+              font-size: 1.5rem;
+              -webkit-text-stroke-width: 1.25px;
+          }
+
+          .calendar-grid {
+              grid-template-columns: repeat(7, 1.45rem);
+              gap: 1px;
+          }
+
+          .calendar-weekday {
+              font-size: 0.6rem;
+          }
+
+          .calendar-day {
+              font-size: 0.7rem;
+              padding: 0.05rem 0.1rem;
+          }
+
+          .venue-address {
+              display: none;
+          }
+      }
+  </style>
+</head>
+
+<body>
+<div id="app"></div>
+</body>
+
+<script>
+    /* language=pug */
+    let template = renderHtmlFromPug(/* pug */`
+      .container-fluid.py-3.app-shell.d-flex.flex-column.flex-lg-row.gap-lg-2
+        .gig-side.mb-4.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
+          .d-flex.align-items-center
+            h1.mb-0
+              | Melb Gig Map
+
+          .small.muted
+            | Data from 
+            a.me-2(
+                href="https://beat.com.au/gig-guide/",
+                target="_blank",
+                rel="noopener",
+                title="Search beat.com.au"
+            ) beat magazine
+          .d-flex.gap-3.mt-3.align-items-start
+            .flex-grow-1
+              .d-flex.flex-wrap.gap-2
+                button.btn.btn-sm.btn-outline-secondary.border-0(
+                  type="button",
+                  :disabled="loading",
+                  @click="refresh()",
+                  title="Refresh"
+                )
+                  i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
+                button.calendar-day(
+                  v-for="range in ranges",
+                  :key="range.id",
+                  type="button",
+                  :class="{'calendar-selected': range.id === active}",
+                  @click="load(range)"
+                )
+                  | {{ range.label }}
+
+              .mt-3  
+
+              .text-muted.small(v-if="startDate")
+                span Showing {{ gigs.length }} gigs in table
+
+              .text-muted.small(v-if="startDate && timing")
+                i.fas.fa-spinner.fa-spin.me-1
+                span(v-if="timing") Loading {{ timesLoaded }} of {{ timesTotal }} times...
+
+              .text-muted.small(v-if="mapping")
+                i.fas.fa-spinner.fa-spin.me-1
+                span Looking up {{ mapped }} of {{ toMap }} venues...
+
+              .text-muted.small(v-if="!mapping && markerCount")
+                | Showing {{ markerCount }} venues on map
+
+              .mt-3
+
+              .text-muted.small(v-if="!selectedGig")
+                | Click a row to focus a venue.
+
+              div(v-if="selectedGig")
+                | {{ selectedGig.venue }}
+              .text-muted.small(v-if="venue.loading")
+                | Looking up the address...
+              .text-danger.small(v-if="venue.error")
+                | {{ venue.error }}
+              .small.venue-address(v-if="venue.data && venue.data.address")
+                | {{ venue.data.address }}
+
+            .calendar
+              .calendar-head.d-flex.align-items-center.justify-content-between
+                button.btn.btn-sm.btn-outline-secondary.border-0(
+                  type="button",
+                  @click="shiftMonth(-1)",
+                  title="Previous month"
+                )
+                  i.fas.fa-chevron-left
+                .small.fw-bold {{ calendarTitle }}
+                button.btn.btn-sm.btn-outline-secondary.border-0(
+                  type="button",
+                  @click="shiftMonth(1)",
+                  title="Next month"
+                )
+                  i.fas.fa-chevron-right
+              .calendar-grid
+                .calendar-weekday(v-for="name in calendarWeekdays", :key="name")
+                  | {{ name }}
+                .calendar-day(
+                  v-for="(cell, index) in calendarCells",
+                  :key="index",
+                  :class="{'calendar-empty': !cell, 'calendar-past': cell && cell.iso < todayIso, 'calendar-today': cell && cell.iso === todayIso, 'calendar-selected': cell && cell.iso === startDate && cell.iso === endDate}",
+                  @click="cell && cell.iso >= todayIso && pickDay(cell.iso)"
+                )
+                  | {{ cell ? cell.day : "" }}
+
+          .text-muted.mt-3(style="font-size: 0.7rem")
+            | Coordinates © 
+            a(
+              href="https://www.openstreetmap.org/copyright",
+              target="_blank",
+              rel="noopener"
+            ) OpenStreetMap contributors
+            | , via 
+            a(
+              href="https://nominatim.openstreetmap.org/",
+              target="_blank",
+              rel="noopener"
+            ) Nominatim
+
+          .map-wrap.mt-2
+            div#map
+
+          .text-muted.mt-1(style="font-size: 0.7rem")
+            a(
+              href="https://www.openstreetmap.org/fixthemap",
+              target="_blank",
+              rel="noopener"
+            ) Report a map issue
+
+        .splitter(@pointerdown="startDrag", title="Drag to resize")
+        .gig-scroll.flex-grow-1(style="min-height: 0")
+
+          .alert.alert-danger(v-if="error")
+            | {{ error }}
+
+          table.table.table-sm.table-hover.align-top.mb-0.gig-table(v-if="loading || gigs.length")
+            colgroup
+              col(style="width: 5rem")
+              col.artist-col(:style="isNarrow ? {} : {width: '50%'}")
+              col.venue-col(v-if="!isNarrow")
+              col(style="width: 5.5rem")
+            thead
+              tr
+                th.sortable(@click="toggleSort('time')")
+                  | Time
+                  i.fas.ms-1(v-if="sortKey === 'time'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                th.sortable(@click="toggleSort('artist')")
+                  | Artist
+                  i.fas.ms-1(v-if="sortKey === 'artist'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                th.sortable.venue-col(v-if="!isNarrow", @click="toggleSort('venue')")
+                  | Venue
+                  i.fas.ms-1(v-if="sortKey === 'venue'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                th.sortable(@click="toggleSort('price')")
+                  | Ticket
+                  i.fas.ms-1(v-if="sortKey === 'price'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+            tbody
+              template(v-if="loading")
+                tr(v-for="row in 6", :key="row")
+                  td
+                    .skeleton
+                  td
+                    .skeleton
+                  td.venue-col(v-if="!isNarrow")
+                    .skeleton
+                  td
+                    .skeleton
+              tr(
+                v-for="(gig, index) in visibleRows",
+                :key="index",
+                :class="gig.venue_url && gig.venue_url === activeVenueUrl ? 'table-active' : ''",
+                :data-venue-url="gig.venue_url"
+                @click="selectGig(gig)"
+              )
+                td
+                  div(v-if="gig.time")
+                    | {{ gig.time }}
+                  div.text-muted(style="font-size: 0.7rem")
+                    | {{ formatDate(gig.date) }}
+                  div.text-muted(style="font-size: 0.7rem", v-if="gig.end_date")
+                    | → {{ formatDate(gig.end_date) }}
+                td
+                  | {{ gig.artist }}
+                  a.ms-2(
+                    v-if="gig.detail_url",
+                    :href="gig.detail_url",
+                    target="_blank",
+                    rel="noopener",
+                    title="Open this gig on beat.com.au"
+                  )
+                    i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                  a.ms-2(
+                    v-if="gig.artist",
+                    :href="searchUrl(gig)",
+                    target="_blank",
+                    rel="noopener",
+                    title="Search the web for this artist"
+                  )
+                    i.fas.fa-search.text-muted(style="font-size: 0.8rem")
+                  div.text-muted(style="font-size: 0.7rem")
+                    | {{ tagLine(gig) }}
+                td.venue-col(v-if="!isNarrow")
+                  | {{ gig.venue }}
+                  a.ms-2(
+                    v-if="gig.venue_url",
+                    :href="gig.venue_url",
+                    target="_blank",
+                    rel="noopener",
+                    title="Open the venue page on beat.com.au"
+                  )
+                    i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                td
+                  a.btn.btn-sm.btn-outline-primary(
+                    v-if="gig.ticket_url",
+                    :href="gig.ticket_url",
+                    target="_blank",
+                    rel="noopener"
+                  ) {{ gig.price || "Tickets" }}
+                  span.text-muted.small(v-if="!gig.ticket_url") {{ gig.price }}
+
+          .scroll-room
+          .text-muted.text-center.py-4(v-if="!gigs.length && !loading && startDate")
+            | No gigs in this range.
+    `);
+
+    const {createApp, ref, computed, onMounted} = Vue;
+
+    const CALENDAR_WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+    function weekdayShort(offsetDays) {
+        const date = new Date();
+        date.setDate(date.getDate() + offsetDays);
+        return CALENDAR_WEEKDAYS[date.getDay()];
+    }
+
+    function buildRanges() {
+        const ranges = [
+            {id: "today", label: "Today", from: 0, to: 0},
+            {id: "tomorrow", label: "Tmrw", from: 1, to: 1},
+        ];
+        for (let offset = 2; offset < 7; offset += 1) {
+            ranges.push({
+                id: `day-${offset}`,
+                label: weekdayShort(offset),
+                from: offset,
+                to: offset,
+            });
+        }
+        return ranges;
+    }
+
+    const RANGES = buildRanges();
+
+    function isoDate(offsetDays) {
+        const date = new Date();
+        date.setDate(date.getDate() + offsetDays);
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${date.getFullYear()}-${month}-${day}`;
+    }
+
+    const MONTHS = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    const MELBOURNE = [-37.8136, 144.9631];
+
+    // Esri World Street Map: a lighter palette, closer to Google Maps than the
+    // OpenStreetMap default style. Note the tile order: {z}/{y}/{x}.
+    const TILE_URL =
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+    // The source list from the service metadata.
+    const TILE_ATTRIBUTION =
+        "Tiles &copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, " +
+        "INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, " +
+        "Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community";
+
+    function escapeHtml(value) {
+        return String(value == null ? "" : value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "";
+        }
+        const parts = value.split("-");
+        if (parts.length !== 3) {
+            return value;
+        }
+        const monthName = MONTHS[Number(parts[1]) - 1];
+        return monthName ? `${Number(parts[2])} ${monthName}` : value;
+    }
+
+    function tagLine(gig) {
+        const tags = [...gig.categories, ...gig.genres];
+        const words = [];
+        for (const tag of tags) {
+            for (const part of String(tag).split("/")) {
+                const word = part.trim();
+                if (word) {
+                    words.push(word);
+                }
+            }
+        }
+        return words.join(" / ");
+    }
+
+    function searchUrl(gig) {
+        const query = [gig.artist, ...(gig.categories || []), ...(gig.genres || [])].filter(Boolean).join(" ");
+        return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    }
+
+    async function fetchGigs(startDate, endDate, refresh) {
+        const searchParams = {start_date: startDate, end_date: endDate};
+        if (refresh) {
+            searchParams.refresh = "true";
+        }
+        if (window.ky) {
+            return await window.ky.get("/api/gigs", {searchParams, timeout: 120000}).json();
+        }
+        const query = new URLSearchParams(searchParams).toString();
+        const response = await fetch(`/api/gigs?${query}`);
+        if (!response.ok) {
+            throw new Error(`server answered status ${response.status}`);
+        }
+        return await response.json();
+    }
+
+    async function fetchVenue(venueUrl) {
+        const searchParams = {venue_url: venueUrl};
+        if (window.ky) {
+            return await window.ky.get("/api/venue", {searchParams, timeout: 60000}).json();
+        }
+        const query = new URLSearchParams(searchParams).toString();
+        const response = await fetch(`/api/venue?${query}`);
+        if (!response.ok) {
+            throw new Error(`server answered status ${response.status}`);
+        }
+        return await response.json();
+    }
+
+    function setup() {
+        const ranges = ref(RANGES);
+        const active = ref("");
+        const startDate = ref("");
+        const endDate = ref("");
+        const gigs = ref([]);
+        const loading = ref(false);
+        const error = ref("");
+        const currentRange = ref(null);
+        const selectedGig = ref(null);
+        const venue = ref({loading: false, data: null, error: ""});
+        const mapping = ref(false);
+        const mapped = ref(0);
+        const toMap = ref(0);
+        const markerCount = ref(0);
+        const timing = ref(false);
+        const timesLoaded = ref(0);
+        const timesTotal = ref(0);
+        let timeRun = 0;
+        let timeSource = null;
+        const narrowScreen = window.matchMedia("(max-width: 991.98px)");
+        const isNarrow = ref(narrowScreen.matches);
+        narrowScreen.addEventListener("change", (event) => {
+            isNarrow.value = event.matches;
+        });
+        let mapRun = 0;
+        const activeVenueUrl = ref("");
+        const venueInfo = new Map();
+        let venueRequest = 0;
+        let map = null;
+        const markers = new Map();
+
+        const sideWidth = ref(null);
+        let dragStartX = 0;
+        let dragStartWidth = 0;
+
+        function startDrag(event) {
+            const side = document.querySelector(".gig-side");
+            if (!side) {
+                return;
+            }
+            dragStartX = event.clientX;
+            dragStartWidth = side.getBoundingClientRect().width;
+            window.addEventListener("pointermove", onDrag);
+            window.addEventListener("pointerup", stopDrag);
+            event.preventDefault();
+        }
+
+        function onDrag(event) {
+            const min = 240;
+            const max = Math.max(min, window.innerWidth - 320);
+            const wanted = dragStartWidth + (event.clientX - dragStartX);
+            sideWidth.value = Math.min(max, Math.max(min, wanted));
+        }
+
+        function stopDrag() {
+            window.removeEventListener("pointermove", onDrag);
+            window.removeEventListener("pointerup", stopDrag);
+        }
+
+        const calendarCursor = ref(new Date());
+        const todayIso = isoDate(0);
+
+        function shiftMonth(delta) {
+            const cursor = calendarCursor.value;
+            calendarCursor.value = new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1);
+        }
+
+        function pickDay(iso) {
+            load({id: `date-${iso}`, start: iso, end: iso});
+        }
+
+        const calendarTitle = computed(() =>
+            calendarCursor.value.toLocaleString("en-AU", {month: "long", year: "numeric"})
+        );
+
+        const calendarCells = computed(() => {
+            const cursor = calendarCursor.value;
+            const year = cursor.getFullYear();
+            const month = cursor.getMonth();
+            const startOffset = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const cells = [];
+            for (let index = 0; index < startOffset; index += 1) {
+                cells.push(null);
+            }
+            for (let day = 1; day <= daysInMonth; day += 1) {
+                const monthText = String(month + 1).padStart(2, "0");
+                const dayText = String(day).padStart(2, "0");
+                cells.push({iso: `${year}-${monthText}-${dayText}`, day});
+            }
+            return cells;
+        });
+
+        async function load(range, force = false) {
+            active.value = range.id;
+            currentRange.value = range;
+            startDate.value = range.start || isoDate(range.from);
+            endDate.value = range.end || isoDate(range.to);
+            loading.value = true;
+            error.value = "";
+            selectedGig.value = null;
+            venue.value = {loading: false, data: null, error: ""};
+            if (map) {
+                for (const marker of markers.values()) {
+                    marker.remove();
+                }
+                markers.clear();
+            }
+            mapRun += 1;
+            markerCount.value = 0;
+            activeVenueUrl.value = "";
+            venueInfo.clear();
+            mapped.value = 0;
+            toMap.value = 0;
+            stopTimes();
+            scrollRoom(0);
+            try {
+                gigs.value = await fetchGigs(startDate.value, endDate.value, force);
+                mapAllVenues();
+                loadTimes(force);
+            } catch (problem) {
+                gigs.value = [];
+                error.value = `Could not load the gig guide: ${problem.message}`;
+            } finally {
+                loading.value = false;
+            }
+        }
+
+        function stopTimes() {
+            timeRun += 1;
+            if (timeSource) {
+                timeSource.abort();
+                timeSource = null;
+            }
+            timing.value = false;
+        }
+
+        async function loadTimes(force = false) {
+            stopTimes();
+            const runId = timeRun;
+            const searchParams = {start_date: startDate.value, end_date: endDate.value};
+            if (force) {
+                searchParams.refresh = "true";
+            }
+            const query = new URLSearchParams(searchParams).toString();
+            timeSource = new AbortController();
+            timing.value = true;
+            timesLoaded.value = 0;
+            timesTotal.value = gigs.value.length;
+
+            function applyLine(line) {
+                if (!line.trim()) {
+                    return;
+                }
+                const update = JSON.parse(line);
+                const gig = gigs.value[update.index];
+                if (gig) {
+                    gig.time = update.time;
+                    timesLoaded.value += 1;
+                }
+            }
+
+            try {
+                const response = await fetch(`/api/times?${query}`, {signal: timeSource.signal});
+                if (!response.ok || !response.body) {
+                    throw new Error(`server answered status ${response.status}`);
+                }
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let done = false;
+                while (!done && runId === timeRun) {
+                    const chunk = await reader.read();
+                    done = chunk.done;
+                    buffer += decoder.decode(chunk.value, {stream: true});
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        applyLine(line);
+                    }
+                }
+                if (runId === timeRun) {
+                    applyLine(buffer);
+                }
+            } catch (problem) {
+                if (problem.name !== "AbortError") {
+                    console.error("time lookup failed", problem);
+                }
+            } finally {
+                if (runId === timeRun) {
+                    timing.value = false;
+                }
+            }
+        }
+
+        function timeValue(time) {
+            const match = /^(\d{1,2})(?::(\d{2}))?(am|pm)$/.exec(String(time || "").trim().toLowerCase());
+            if (!match) {
+                return Number.MAX_SAFE_INTEGER;
+            }
+            let hour = Number(match[1]) % 12;
+            if (match[3] === "pm") {
+                hour += 12;
+            }
+            return hour * 60 + Number(match[2] || 0);
+        }
+
+        const sortKey = ref("time");
+        const sortDir = ref("asc");
+
+        function toggleSort(key) {
+            if (sortKey.value === key) {
+                sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+            } else {
+                sortKey.value = key;
+                sortDir.value = "asc";
+            }
+        }
+
+        function priceValue(price) {
+            const match = /([0-9]+(?:\.[0-9]+)?)/.exec(String(price || ""));
+            return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+        }
+
+        function compareGigs(left, right) {
+            const direction = sortDir.value === "asc" ? 1 : -1;
+            if (sortKey.value === "time") {
+                const dateOrder = String(left.date || "").localeCompare(String(right.date || ""));
+                if (dateOrder !== 0) {
+                    return dateOrder * direction;
+                }
+                if (!left.time && !right.time) {
+                    return 0;
+                }
+                if (!left.time) {
+                    return 1;
+                }
+                if (!right.time) {
+                    return -1;
+                }
+                return (timeValue(left.time) - timeValue(right.time)) * direction;
+            }
+            if (sortKey.value === "price") {
+                return (priceValue(left.price) - priceValue(right.price)) * direction;
+            }
+            return String(left[sortKey.value] || "").localeCompare(String(right[sortKey.value] || "")) * direction;
+        }
+
+        const visibleGigs = computed(() => {
+            if (!sortKey.value) {
+                return gigs.value;
+            }
+            return [...gigs.value].sort(compareGigs);
+        });
+
+        const visibleRows = computed(() => (loading.value ? [] : visibleGigs.value));
+
+        function actsAt(venueUrl) {
+            const acts = [];
+            for (const gig of gigs.value) {
+                if (gig.venue_url !== venueUrl || !gig.artist) {
+                    continue;
+                }
+                acts.push({
+                    time: gig.time || "",
+                    artist: gig.artist,
+                    order: timeValue(gig.time),
+                });
+            }
+            acts.sort((left, right) => left.order - right.order);
+            return acts;
+        }
+
+        function addMarker(data) {
+            if (!map || !data.latitude || !data.longitude) {
+                return;
+            }
+            const marker =
+                markers.get(data.venue_url) ||
+                L.marker([data.latitude, data.longitude]).addTo(map);
+            const name = escapeHtml(data.name || "Venue");
+            const address = escapeHtml(data.address || "");
+            const acts = actsAt(data.venue_url);
+            let popup = '<table class="gig-popup">';
+            for (const act of acts) {
+                popup += `<tr><td>${escapeHtml(act.time)}</td><td>${escapeHtml(act.artist)}</td></tr>`;
+            }
+            popup += '<tr class="gig-popup-venue"><td>Venue</td>';
+            popup += `<td>${name}${address ? `<br>${address}` : ""}</td></tr>`;
+            popup += "</table>";
+            marker.bindPopup(popup);
+            marker.on("click", () => focusVenue(data.venue_url));
+            markers.set(data.venue_url, marker);
+            venueInfo.set(data.venue_url, data);
+            markerCount.value = markers.size;
+        }
+
+        function scrollRoom(pixels) {
+            // Only the narrow layout needs room below the last row.
+            const room = document.querySelector(".scroll-room");
+            if (room) {
+                room.style.height = isNarrow.value ? `${Math.max(0, pixels)}px` : "0px";
+            }
+        }
+
+        function scrollToVenue(venueUrl) {
+            const scroller = document.querySelector(".gig-scroll");
+            const head = scroller ? scroller.querySelector("thead") : null;
+            const offset = head ? head.getBoundingClientRect().height : 0;
+            for (const row of document.querySelectorAll("tbody tr")) {
+                if (row.dataset.venueUrl !== venueUrl) {
+                    continue;
+                }
+                if (isNarrow.value && scroller) {
+                    // Measure the table alone, so the room is exact.
+                    scrollRoom(0);
+                    if (scroller.scrollHeight <= scroller.clientHeight) {
+                        return;
+                    }
+                    const short = row.getBoundingClientRect().top
+                        - scroller.getBoundingClientRect().top
+                        + scroller.scrollTop
+                        - offset
+                        - (scroller.scrollHeight - scroller.clientHeight);
+                    scrollRoom(short);
+                    // Read again: the room changed the scroll limit.
+                    const delta = row.getBoundingClientRect().top
+                        - scroller.getBoundingClientRect().top
+                        - offset;
+                    scroller.scrollBy({top: delta, behavior: "smooth"});
+                } else {
+                    row.scrollIntoView({block: "center", behavior: "smooth"});
+                }
+                return;
+            }
+        }
+
+        function focusVenue(venueUrl) {
+            activeVenueUrl.value = venueUrl;
+            const gig = gigs.value.find((item) => item.venue_url === venueUrl);
+            if (gig) {
+                selectedGig.value = gig;
+            }
+            const data = venueInfo.get(venueUrl);
+            if (data) {
+                venue.value = {loading: false, data, error: ""};
+            }
+            scrollToVenue(venueUrl);
+        }
+
+        function fitVenues() {
+            if (markers.size === 0) {
+                return;
+            }
+            const group = L.featureGroup([...markers.values()]);
+            map.fitBounds(group.getBounds().pad(0.15));
+        }
+
+        async function mapAllVenues() {
+            mapRun += 1;
+            const runId = mapRun;
+            const urls = [];
+            for (const gig of gigs.value) {
+                if (gig.venue_url && !urls.includes(gig.venue_url)) {
+                    urls.push(gig.venue_url);
+                }
+            }
+            mapping.value = true;
+            mapped.value = 0;
+            toMap.value = urls.length;
+            try {
+                // One request at a time. The server holds the geocoder to
+                // one request per second for the same reason.
+                for (const url of urls) {
+                    if (runId !== mapRun) {
+                        return;
+                    }
+                    try {
+                        addMarker(await fetchVenue(url));
+                    } catch (problem) {
+                        console.error("venue lookup failed", url, problem);
+                    }
+                    mapped.value += 1;
+                }
+                fitVenues();
+            } finally {
+                mapping.value = false;
+            }
+        }
+
+        async function selectGig(gig) {
+            selectedGig.value = gig;
+            activeVenueUrl.value = gig.venue_url || "";
+            if (!gig.venue_url) {
+                venue.value = {
+                    loading: false,
+                    data: null,
+                    error: "This gig has no venue link.",
+                };
+                return;
+            }
+            venueRequest += 1;
+            const requestId = venueRequest;
+            venue.value = {loading: true, data: null, error: ""};
+            try {
+                const data = await fetchVenue(gig.venue_url);
+                if (venueRequest !== requestId) {
+                    return;
+                }
+                venue.value = {loading: false, data, error: ""};
+                addMarker(data);
+                if (data.latitude && data.longitude) {
+                    map.setView([data.latitude, data.longitude], 16);
+                    markers.get(data.venue_url).openPopup();
+                }
+            } catch (problem) {
+                if (venueRequest === requestId) {
+                    const message = `Could not load the venue: ${problem.message}`;
+                    venue.value = {loading: false, data: null, error: message};
+                }
+            }
+        }
+
+        function refresh() {
+            if (currentRange.value) {
+                load(currentRange.value, true);
+            }
+        }
+
+        onMounted(() => {
+            document.title = "Melb Gig Map";
+            map = L.map("map").setView(MELBOURNE, 11);
+            L.tileLayer(TILE_URL, {
+                maxZoom: 19,
+                attribution: TILE_ATTRIBUTION,
+            }).addTo(map);
+            new ResizeObserver(() => {
+                window.requestAnimationFrame(() => map.invalidateSize());
+            }).observe(document.getElementById("map"));
+            load(RANGES.find((range) => range.id === "today") || RANGES[0]);
+        });
+
+        return {
+            ranges,
+            active,
+            startDate,
+            endDate,
+            gigs,
+            loading,
+            error,
+            load,
+            refresh,
+            selectedGig,
+            venue,
+            selectGig,
+            mapping,
+            mapped,
+            toMap,
+            timing,
+            timesLoaded,
+            timesTotal,
+            isNarrow,
+            markerCount,
+            sideWidth,
+            startDrag,
+            activeVenueUrl,
+            formatDate,
+            tagLine,
+            searchUrl,
+            sortKey,
+            sortDir,
+            toggleSort,
+            visibleGigs,
+            visibleRows,
+            calendarTitle,
+            calendarCells,
+            calendarWeekdays: CALENDAR_WEEKDAYS,
+            todayIso,
+            shiftMonth,
+            pickDay
+        };
+    
+    }
+    
+    document.addEventListener("DOMContentLoaded", () => {
+        createApp({template, setup}).mount("#app");
+    });
+</script>
+</html>
