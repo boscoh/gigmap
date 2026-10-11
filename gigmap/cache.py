@@ -51,14 +51,14 @@ class JsonCache(Generic[M]):
     def path(self, key: str) -> Path:
         return self.directory() / self._filename(key)
 
-    def load(self, key: str, *, now: float | None = None) -> M | None:
+    def load(self, key: str) -> M | None:
         """Read one fresh value. None when absent, damaged, or stale."""
         path = self.path(key)
         try:
             value = self._adapter.validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-        if self._is_fresh(path, time.time() if now is None else now):
+        if self._is_fresh(path):
             return value
         return None
 
@@ -97,10 +97,10 @@ class JsonCache(Generic[M]):
             self.save(key, value)
         return value
 
-    def _is_fresh(self, path: Path, now: float) -> bool:
+    def _is_fresh(self, path: Path) -> bool:
         if self._max_age is None:
             return True
         try:
-            return now - path.stat().st_mtime < self._max_age
+            return time.time() - path.stat().st_mtime < self._max_age
         except OSError:
             return False
