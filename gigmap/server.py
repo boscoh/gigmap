@@ -19,12 +19,10 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-import beat
-import cache
-import sources
-import stores
+from gigmap import beat, cache, sources, stores
 
-BASE_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = PACKAGE_DIR.parent
 DATA_DIR_ENV = "GIGMAP_DATA_DIR"
 CACHE_SECONDS = cache.MIN_AGE_SECONDS
 def env_int(name: str, default: int) -> int:
@@ -90,7 +88,7 @@ async def source_error(_: Request, error: sources.SourceError) -> JSONResponse:
 
 
 def data_dir() -> Path:
-    directory = Path(os.environ.get(DATA_DIR_ENV, BASE_DIR / "data")).expanduser()
+    directory = Path(os.environ.get(DATA_DIR_ENV, ROOT_DIR / "data")).expanduser()
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -107,7 +105,7 @@ def validate_dates(start_date: str, end_date: str) -> None:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(BASE_DIR / "index.html")
+    return FileResponse(PACKAGE_DIR / "index.html")
 
 
 @app.get("/api/page", response_class=HTMLResponse)
@@ -209,10 +207,15 @@ def serve(
     use_data_dir(data_dir)
 
     if reload:
-        uvicorn.run("server:app", host=host, port=port,
-                    reload=True, reload_dirs=[str(BASE_DIR)])
+        uvicorn.run(
+            "gigmap.server:app",
+            host=host,
+            port=port,
+            reload=True,
+            reload_dirs=[str(ROOT_DIR)],
+        )
     else:
-        uvicorn.run("server:app", host=host, port=port)
+        uvicorn.run("gigmap.server:app", host=host, port=port)
 
 
 def use_data_dir(data_dir: Path | None) -> None:

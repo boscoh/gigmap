@@ -12,7 +12,7 @@ from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-import sources
+from gigmap import sources
 
 BEAT_URL = "https://beat.com.au/gig-guide/"
 BEAT_ORIGIN = "https://beat.com.au/"

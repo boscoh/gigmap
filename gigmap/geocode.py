@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-import sources
+from gigmap import sources
 
 GEOCODE_SECONDS = 1.1
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"

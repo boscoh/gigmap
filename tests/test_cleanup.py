@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import server
+from gigmap import server
 
 OLD = 40 * 86400
 

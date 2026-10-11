@@ -7,12 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import beat
-import geocode
-import server
-import sources
-
-import stores
+from gigmap import beat, geocode, server, sources, stores
 
 
 class FakeSource:

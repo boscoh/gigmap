@@ -10,9 +10,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-import cache
-import geocode
-import sources
+from gigmap import cache, geocode, sources
 
 SAVED_FILE_RE = re.compile(
     r"gigmap_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"

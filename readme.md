@@ -377,14 +377,14 @@ source, and the routes.
 
 ## Files
 
-- `index.html` — one page Vue 3 application. Vue, Bootstrap, Pug, Lodash, and
-  Ky come from CDN. The layout comes from `~/p/onepageapp`.
-- `server.py` — the FastAPI server, the HTTP routes, and the data cleanup
-- `stores.py` — the three cache kinds and `CachedSource`
-- `cache.py` — the reusable JSON disk cache and the retention rules
-- `geocode.py` — the Nominatim lookup and the map links
-- `sources.py` — the `GigSource` protocol, the data classes, and the errors
-- `beat.py` — the beat.com.au rules: the URLs, the parsers, and `BeatSource`
+- `gigmap/index.html` — one page Vue 3 application. Vue, Bootstrap, Pug,
+  Lodash, and Ky come from CDN. The layout comes from `~/p/onepageapp`.
+- `gigmap/server.py` — the FastAPI server, the HTTP routes, and the cleanup
+- `gigmap/stores.py` — the three cache kinds and `CachedSource`
+- `gigmap/cache.py` — the reusable JSON disk cache and the retention rules
+- `gigmap/geocode.py` — the Nominatim lookup and the map links
+- `gigmap/sources.py` — the `GigSource` protocol, the data classes, and the errors
+- `gigmap/beat.py` — the beat.com.au rules: the URLs, the parsers, and `BeatSource`
 - `pyproject.toml` — the packages and the console script
 - `pyrightconfig.json` — points Pyright at the `.venv` directory
 - `data/` — the saved JSON data, the venue data, and the saved gig times
