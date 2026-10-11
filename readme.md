@@ -105,7 +105,8 @@ venue name and the address sit in the right column, as plain text.
 - Click a row in the table — the map moves to that venue.
 - Click a marker — the table marks the rows for that venue and scrolls to the
   first one. On a narrow screen the row moves to the top of the table area,
-  below the header.
+  below the header. The table area is a box that scrolls on its own, so the
+  page moves as well when the top of the box is above the screen.
 
 The server reads the address from the venue page on `beat.com.au`. The server
 then looks up the coordinates. A venue without a result stays in the store

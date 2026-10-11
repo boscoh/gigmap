@@ -607,7 +607,7 @@
             | No gigs in this range.
     `);
 
-    const {createApp, ref, computed, onMounted} = Vue;
+    const {createApp, ref, computed, nextTick, onMounted} = Vue;
 
     const CALENDAR_WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -1059,6 +1059,88 @@
             }
         }
 
+        const smoothScroll =
+            "scrollBehavior" in document.documentElement.style;
+
+        // A touch after the tap means the reader moved the list. Do not move
+        // the list again after the venue lookup in that case.
+        let touched = false;
+        window.addEventListener(
+            "touchstart",
+            () => {
+                touched = true;
+            },
+            {passive: true},
+        );
+
+        function scrollContainer(element, top) {
+            const target = Math.round(top);
+            if (!smoothScroll) {
+                element.scrollTop = target;
+                return;
+            }
+            element.scrollTo({top: target, behavior: "smooth"});
+            // iOS Safari can discard a programmatic scroll while a momentum
+            // scroll runs. Correct the value when the scroll stops.
+            let timer = 0;
+            const stop = () => {
+                element.removeEventListener("scrollend", check);
+                element.removeEventListener("touchstart", stop);
+                clearTimeout(timer);
+            };
+            const check = () => {
+                stop();
+                if (Math.abs(element.scrollTop - target) > 2) {
+                    element.scrollTop = target;
+                }
+            };
+            element.addEventListener("scrollend", check);
+            element.addEventListener("touchstart", stop, {passive: true});
+            timer = setTimeout(stop, 1500);
+        }
+
+        // The narrow layout scrolls the page as well as the list box. Move the
+        // page only when the top of the list box is above the screen.
+        function scrollPageToList(scroller) {
+            if (!isNarrow.value) {
+                return;
+            }
+            const top = scroller.getBoundingClientRect().top;
+            if (top >= 0) {
+                return;
+            }
+            const target = Math.round(window.scrollY + top - 4);
+            if (smoothScroll) {
+                window.scrollTo({top: target, behavior: "smooth"});
+            } else {
+                window.scrollTo(0, target);
+            }
+        }
+
+        // The distance from the top of the row to the top of the list box.
+        // The sticky header fills the space when the row is at the top.
+        function rowGap(row, scroller) {
+            const head = scroller.querySelector("thead");
+            const offset = head ? head.getBoundingClientRect().height : 0;
+            return row.getBoundingClientRect().top
+                - scroller.getBoundingClientRect().top
+                - offset;
+        }
+
+        // Put the row at the top of the list box. Move the page when the top of
+        // the box is above the screen, so the row stays visible.
+        function alignRowToTop(row) {
+            const scroller = document.querySelector(".gig-scroll");
+            if (!row || !scroller) {
+                return;
+            }
+            scrollPageToList(scroller);
+            const delta = rowGap(row, scroller);
+            if (Math.abs(delta) > 1) {
+                scrollContainer(scroller, scroller.scrollTop + delta);
+            }
+        }
+
         function scrollRowToTop(row) {
             const scroller = document.querySelector(".gig-scroll");
             if (!row || !scroller) {
@@ -1078,10 +1160,7 @@
                 - (scroller.scrollHeight - scroller.clientHeight);
             scrollRoom(short);
             // Read again: the room changed the scroll limit.
-            const delta = row.getBoundingClientRect().top
-                - scroller.getBoundingClientRect().top
-                - offset;
-            scroller.scrollBy({top: delta, behavior: "smooth"});
+            alignRowToTop(row);
         }
 
         function scrollToVenue(venueUrl) {
@@ -1098,7 +1177,7 @@
             }
         }
 
-        function focusVenue(venueUrl) {
+        async function focusVenue(venueUrl) {
             activeVenueUrl.value = venueUrl;
             const gig = gigs.value.find((item) => item.venue_url === venueUrl);
             if (gig) {
@@ -1108,6 +1187,9 @@
             if (data) {
                 venue.value = {loading: false, data, error: ""};
             }
+            // The venue name and the address changed the height above the
+            // list. Measure after Vue writes the change to the page.
+            await nextTick();
             scrollToVenue(venueUrl);
         }
 
@@ -1154,26 +1236,42 @@
         async function selectGig(gig, event) {
             selectedGig.value = gig;
             activeVenueUrl.value = gig.venue_url || "";
-            if (isNarrow.value && event) {
-                scrollRowToTop(event.currentTarget);
-            }
+            const row = isNarrow.value && event ? event.currentTarget : null;
+            // The tap fires touchstart before click. Clear the mark, so a
+            // later touch can cancel the correction below.
+            touched = false;
             if (!gig.venue_url) {
                 venue.value = {
                     loading: false,
                     data: null,
                     error: "This gig has no venue link.",
                 };
+                if (row) {
+                    await nextTick();
+                    scrollRowToTop(row);
+                }
                 return;
             }
             venueRequest += 1;
             const requestId = venueRequest;
             venue.value = {loading: true, data: null, error: ""};
+            if (row) {
+                // The summary above the list changed height. Measure after
+                // Vue writes the change to the page.
+                await nextTick();
+                scrollRowToTop(row);
+            }
             try {
                 const data = await fetchVenue(gig.venue_url);
                 if (venueRequest !== requestId) {
                     return;
                 }
                 venue.value = {loading: false, data, error: ""};
+                if (row && !touched) {
+                    // The address changed the height above the list again.
+                    await nextTick();
+                    alignRowToTop(row);
+                }
                 addMarker(data);
                 if (data.latitude && data.longitude) {
                     map.setView([data.latitude, data.longitude], 16);
@@ -1183,6 +1281,10 @@
                 if (venueRequest === requestId) {
                     const message = `Could not load the venue: ${problem.message}`;
                     venue.value = {loading: false, data: null, error: message};
+                    if (row && !touched) {
+                        await nextTick();
+                        alignRowToTop(row);
+                    }
                 }
             }
         }
