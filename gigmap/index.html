@@ -105,6 +105,33 @@
           font-size: 0.75rem;
       }
 
+      .status-chip {
+          align-items: center;
+          background: none;
+          border: 0;
+          border-radius: 0.25rem;
+          color: var(--bs-secondary);
+          display: inline-flex;
+          font-size: 0.75rem;
+          gap: 0.35rem;
+          line-height: 1.5;
+          padding: 0.2rem 0.4rem;
+      }
+
+      button.status-chip {
+          cursor: pointer;
+      }
+
+      button.status-chip:hover:not(:disabled) {
+          background: #e9ecef;
+          color: #212529;
+      }
+
+      button.status-chip:disabled {
+          cursor: default;
+          opacity: 1;
+      }
+
       .splitter {
           display: none;
           flex: 0 0 0.75rem;
@@ -369,13 +396,6 @@
           .d-flex.gap-3.mt-3.align-items-start
             .flex-grow-1
               .d-flex.flex-wrap.gap-2
-                button.btn.btn-sm.btn-outline-secondary.border-0(
-                  type="button",
-                  :disabled="loading",
-                  @click="refresh()",
-                  title="Refresh"
-                )
-                  i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
                 button.calendar-day(
                   v-for="range in ranges",
                   :key="range.id",
@@ -387,19 +407,22 @@
 
               .mt-3  
 
-              .text-muted.small(v-if="startDate && timing")
-                i.fas.fa-spinner.fa-spin.me-1
-                span(v-if="timing") Loading {{ timesLoaded }} of {{ timesTotal }} times...
-
-              .text-muted.small(v-if="mapping")
-                i.fas.fa-spinner.fa-spin.me-1
-                span Looking up {{ mapped }} of {{ toMap }} venues...
-
-              .text-muted.small(v-if="startDate")
-                span Showing {{ gigs.length }} gigs 
-                =" "
-                span(v-if="!mapping && markerCount")
-                    | in {{ markerCount }} venues 
+              .d-flex.flex-column
+                button.status-chip(
+                  type="button",
+                  :disabled="loading",
+                  @click="refresh()",
+                  title="Refresh"
+                )
+                  i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
+                  span(v-if="startDate") Showing {{ gigs.length }} gigs
+                  span(v-if="!mapping && markerCount") in {{ markerCount }} venues
+                .status-chip(v-if="startDate && timing")
+                  i.fas.fa-spinner.fa-spin
+                  span Loading {{ timesLoaded }} of {{ timesTotal }} times...
+                .status-chip(v-if="mapping")
+                  i.fas.fa-spinner.fa-spin
+                  span Looking up {{ mapped }} of {{ toMap }} venues...
 
               .mt-3
               .mt-5
