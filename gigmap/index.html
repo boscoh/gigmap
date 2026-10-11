@@ -109,6 +109,15 @@
           font-size: 0.75rem;
       }
 
+      .summary {
+          min-width: 0;
+      }
+
+      .summary div {
+          overflow: hidden;
+          white-space: nowrap;
+      }
+
       .status-chip {
           align-items: center;
           background: none;
@@ -400,8 +409,8 @@
                 title="Search beat.com.au"
             ) ${SOURCE.name}
           .d-flex.gap-3.mt-3.align-items-start
-            .flex-grow-1
-              .d-flex.flex-wrap.gap-2
+            .summary.flex-grow-1.overflow-hidden
+              .d-flex.flex-nowrap.gap-2
                 button.calendar-day(
                   v-for="range in ranges",
                   :key="range.id",
