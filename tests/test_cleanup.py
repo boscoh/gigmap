@@ -140,12 +140,3 @@ def test_a_bad_loop_iteration_does_not_stop_the_loop(monkeypatch: pytest.MonkeyP
     asyncio.run(run())
 
     assert len(calls) >= 2
-
-
-def test_env_int(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GIGMAP_TEST_TTL", "7")
-    assert server.env_int("GIGMAP_TEST_TTL", 30) == 7
-    monkeypatch.setenv("GIGMAP_TEST_TTL", "not a number")
-    assert server.env_int("GIGMAP_TEST_TTL", 30) == 30
-    monkeypatch.delenv("GIGMAP_TEST_TTL")
-    assert server.env_int("GIGMAP_TEST_TTL", 30) == 30

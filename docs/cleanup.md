@@ -50,9 +50,6 @@ uv run gigmap clean --quiet        # print nothing
 | `--dry-run` | off | print the plan and remove nothing |
 | `--quiet` | off | print nothing |
 
-The environment variable `GIGMAP_GIG_TTL_DAYS` sets the default for
-`--gig-days`.
-
 ## The output
 
 ```text

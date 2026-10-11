@@ -27,18 +27,8 @@ CACHE_SECONDS = stores.DAYS_CACHE_SECONDS
 SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
 SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
 
-
-def env_int(name: str, default: int) -> int:
-    """Read a non-negative integer from the environment."""
-    try:
-        value = int(os.environ[name])
-    except (KeyError, ValueError):
-        return default
-    return max(0, value)
-
-
 # A gig time file older than this is removed by the cleanup.
-GIG_TTL_DAYS = env_int("GIGMAP_GIG_TTL_DAYS", 30)
+GIG_TTL_DAYS = 30
 # The cleanup runs at startup, then once each day.
 CLEANUP_INTERVAL_SECONDS = 24 * 3600
 # The detail pages are fetched with a small pool of connections.
@@ -322,7 +312,7 @@ def run_cleanup(
 def clean(
     *,
     data_dir: Path | None = None,
-    gig_days: Annotated[int, Parameter(env_var="GIGMAP_GIG_TTL_DAYS")] = GIG_TTL_DAYS,
+    gig_days: int = GIG_TTL_DAYS,
     dry_run: bool = False,
     quiet: bool = False,
 ) -> None:

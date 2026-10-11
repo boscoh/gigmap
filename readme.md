@@ -205,9 +205,6 @@ Nominatim policy needs the cache.
 | `--dry-run` | off | print the plan and remove nothing |
 | `--quiet` | off | print nothing |
 
-The environment variable `GIGMAP_GIG_TTL_DAYS` sets the default for
-`--gig-days`.
-
 The server runs the cleanup itself: one time at startup, then each day. The
 deploy command pins the timezone, because the server is UTC. See
 `docs/cleanup.md` for the cron alternative.
