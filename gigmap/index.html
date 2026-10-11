@@ -110,7 +110,18 @@
       }
 
       .summary {
+          align-self: stretch;
+          display: flex;
+          flex-direction: column;
           min-width: 0;
+      }
+
+      .venue-group {
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          justify-content: flex-end;
+          padding-top: 1rem;
       }
 
       .summary div {
@@ -442,20 +453,18 @@
                   i.fas.fa-spinner.fa-spin
                   span Loading {{ mapped }} of {{ toMap }} venues...
 
-              .mt-3
-              .mt-5
+              .venue-group
+                .text-muted.small(v-if="!selectedGig")
+                  | Click a row to focus a venue.
 
-              .text-muted.small(v-if="!selectedGig")
-                | Click a row to focus a venue.
-
-              div(v-if="selectedGig")
-                | {{ selectedGig.venue }}
-              .text-muted.small(v-if="venue.loading")
-                | Looking up the address...
-              .text-danger.small(v-if="venue.error")
-                | {{ venue.error }}
-              .small.venue-address(v-if="venue.data && venue.data.address")
-                | {{ venue.data.address }}
+                div(v-if="selectedGig")
+                  | {{ selectedGig.venue }}
+                .text-muted.small(v-if="venue.loading")
+                  | Looking up the address...
+                .text-danger.small(v-if="venue.error")
+                  | {{ venue.error }}
+                .small.venue-address(v-if="venue.data && venue.data.address")
+                  | {{ venue.data.address }}
 
             .calendar
               .calendar-head.d-flex.align-items-center.justify-content-between
