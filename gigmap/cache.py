@@ -1,9 +1,8 @@
 """Save and read the JSON data files through one small abstraction.
 
 One `JsonCache` holds the rules of one cache kind: the subdirectory, the
-value type, the file name, the freshness rule, and the validity rule. It
-does the shared work: build the path, validate on read, and write
-atomically.
+value type, the file name, and the freshness rule. It builds the path,
+validates on read, and writes atomically.
 
 `stores.py` creates one `JsonCache` for each data kind.
 """
@@ -39,14 +38,12 @@ class JsonCache(Generic[M]):
         *,
         filename: Callable[[str], str] = default_filename,
         max_age: float | None = None,
-        valid: Callable[[M], bool] | None = None,
     ) -> None:
         self._root = root
         self._subdir = subdir
         self._adapter = adapter
         self._filename = filename
         self._max_age = max_age
-        self._valid = valid
 
     def directory(self) -> Path:
         return self._root() / self._subdir
@@ -61,7 +58,7 @@ class JsonCache(Generic[M]):
             value = self._adapter.validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-        if self._is_fresh(value, path, time.time() if now is None else now):
+        if self._is_fresh(path, time.time() if now is None else now):
             return value
         return None
 
@@ -90,23 +87,17 @@ class JsonCache(Generic[M]):
         *,
         refresh: bool = False,
     ) -> M | None:
-        """Load one value, or call `origin`, and store it when valid.
-
-        A value that fails the validity rule is returned but not stored.
-        """
+        """Load one value, or call `origin`, and store it."""
         if not refresh:
             hit = self.load(key)
             if hit is not None:
                 return hit
         value = await origin()
         if value is not None:
-            if self._valid is None or self._valid(value):
-                self.save(key, value)
+            self.save(key, value)
         return value
 
-    def _is_fresh(self, value: M, path: Path, now: float) -> bool:
-        if self._valid is not None and not self._valid(value):
-            return False
+    def _is_fresh(self, path: Path, now: float) -> bool:
         if self._max_age is None:
             return True
         try:

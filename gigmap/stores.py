@@ -12,11 +12,6 @@ from pydantic import TypeAdapter
 from gigmap import cache, geocode, sources
 
 
-def has_coordinates(venue: sources.Venue) -> bool:
-    """Return True when the venue holds a geocode."""
-    return venue.latitude is not None and venue.longitude is not None
-
-
 class CachedSource:
     """Cache the reads of one source on disk. Implement `GigSource`."""
 
@@ -36,9 +31,7 @@ class CachedSource:
             max_age=cache.MIN_AGE_SECONDS,
         )
         self._gigs = cache.JsonCache(data_dir, "gigs", TypeAdapter(sources.GigDetail))
-        self._venues = cache.JsonCache(
-            data_dir, "venues", TypeAdapter(sources.Venue), valid=has_coordinates
-        )
+        self._venues = cache.JsonCache(data_dir, "venues", TypeAdapter(sources.Venue))
 
     async def page(self, start_date: str, end_date: str) -> str:
         return await self._source.page(start_date, end_date)
@@ -62,11 +55,11 @@ class CachedSource:
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Read the venue, add the geocode, and cache it when complete."""
-
-        async def read() -> sources.Venue:
-            return await geocode.enrich_venue(await self._source.venue(venue_url))
-
-        venue = await self._venues.fetch(sources.url_key(venue_url), read)
-        if venue is None:
-            raise sources.SourceError("the source gave no venue")
+        key = sources.url_key(venue_url)
+        hit = self._venues.load(key)
+        if hit is not None:
+            return hit
+        venue = await geocode.enrich_venue(await self._source.venue(venue_url))
+        if venue.latitude is not None and venue.longitude is not None:
+            self._venues.save(key, venue)
         return venue
