@@ -423,21 +423,24 @@
               .mt-3  
 
               .d-flex.flex-column
-                button.status-chip(
-                  type="button",
-                  :disabled="loading",
-                  @click="refresh()",
-                  title="Refresh"
-                )
-                  i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
-                  span(v-if="startDate") Showing {{ gigs.length }} gigs
-                  span(v-if="!mapping && markerCount") in {{ markerCount }} venues
+                .d-flex.flex-row.small.text-muted
+                  button.status-chip(
+                    type="button",
+                    :disabled="loading",
+                    @click="refresh()",
+                    title="Refresh"
+                  )
+                    i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
+                  template(v-if="startDate && gigs.length") 
+                    | {{ gigs.length }} gigs
+                    =" "
+                  template(v-if="!mapping && markerCount") in {{ markerCount }} venues
                 .status-chip(v-if="startDate && timing")
                   i.fas.fa-spinner.fa-spin
                   span Loading {{ timesLoaded }} of {{ timesTotal }} times...
                 .status-chip(v-if="mapping")
                   i.fas.fa-spinner.fa-spin
-                  span Looking up {{ mapped }} of {{ toMap }} venues...
+                  span Loading {{ mapped }} of {{ toMap }} venues...
 
               .mt-3
               .mt-5
