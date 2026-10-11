@@ -94,6 +94,10 @@
           overflow: auto;
       }
 
+      .gig-frame {
+          display: contents;
+      }
+
       .gig-scroll thead th {
           position: sticky;
           top: 0;
@@ -163,7 +167,7 @@
       }
 
       .splitter {
-          display: none;
+          display: flex;
           flex: 0 0 0.75rem;
           justify-content: center;
           cursor: col-resize;
@@ -401,7 +405,54 @@
 
           .map-wrap {
               flex: 0 0 auto;
-              height: 22rem;
+              height: calc(22rem - 50px);
+          }
+
+          .splitter {
+              flex: 0 0 2.25rem;
+              cursor: grab;
+          }
+
+          .splitter:active {
+              cursor: grabbing;
+          }
+
+          .splitter::before {
+              display: none;
+          }
+
+          .gig-frame {
+              display: block;
+              position: relative;
+              overflow: hidden;
+              border: 1px solid #dee2e6;
+              border-radius: 0.25rem;
+          }
+
+          .gig-frame::after {
+              content: "";
+              position: absolute;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              height: 0.75rem;
+              z-index: 2;
+              pointer-events: none;
+              opacity: 0;
+              transition: opacity 0.2s;
+              background: linear-gradient(rgba(33, 37, 41, 0), rgba(33, 37, 41, 0.2));
+          }
+
+          .gig-frame.has-below::after {
+              opacity: 1;
+          }
+
+          .gig-frame thead th {
+              transition: box-shadow 0.2s;
+          }
+
+          .gig-frame.has-above thead th {
+              box-shadow: 0 0.3rem 0.4rem -0.3rem rgba(33, 37, 41, 0.3);
           }
 
           h1 {
@@ -436,7 +487,7 @@
     /* language=pug */
     let template = renderHtmlFromPug(/* pug */`
       .container-fluid.py-3.app-shell.d-flex.flex-column.flex-lg-row.gap-lg-2
-        .gig-side.mb-4.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
+        .gig-side.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
           .gig-head.d-flex.align-items-center(v-if="!isNarrow")
             h1.mb-0
               | ${SOURCE.title}
@@ -540,108 +591,109 @@
           .map-wrap.mt-2
             div#map
 
-        .splitter(@pointerdown="startDrag", title="Drag to resize")
-        .gig-scroll.flex-grow-1(style="min-height: 0")
+        .splitter(@pointerdown="startDrag", :title="isNarrow ? 'Drag to scroll the page' : 'Drag to resize'")
+        .gig-frame(:class="frameClass")
+          .gig-scroll.flex-grow-1(style="min-height: 0", @scroll="updateScrollEdges")
 
-          .alert.alert-danger(v-if="error")
-            | {{ error }}
+            .alert.alert-danger(v-if="error")
+              | {{ error }}
 
-          table.table.table-sm.table-hover.align-top.mb-0.gig-table(v-if="loading || gigs.length")
-            colgroup
-              col(style="width: 5rem")
-              col.artist-col(:style="isNarrow ? {} : {width: '50%'}")
-              col.venue-col(v-if="!isNarrow")
-              col(style="width: 5.5rem")
-            thead
-              tr
-                th.sortable(@click="toggleSort('time')")
-                  | Time
-                  i.fas.ms-1(v-if="sortKey === 'time'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
-                th.sortable(@click="toggleSort('artist')")
-                  | Artist
-                  i.fas.ms-1(v-if="sortKey === 'artist'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
-                th.sortable.venue-col(v-if="!isNarrow", @click="toggleSort('venue')")
-                  | Venue
-                  i.fas.ms-1(v-if="sortKey === 'venue'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
-                th.sortable(@click="toggleSort('price')")
-                  | Ticket
-                  i.fas.ms-1(v-if="sortKey === 'price'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
-            tbody
-              template(v-if="loading")
-                tr(v-for="row in 6", :key="row")
+            table.table.table-sm.table-hover.align-top.mb-0.gig-table(v-if="loading || gigs.length")
+              colgroup
+                col(style="width: 5rem")
+                col.artist-col(:style="isNarrow ? {} : {width: '50%'}")
+                col.venue-col(v-if="!isNarrow")
+                col(style="width: 5.5rem")
+              thead
+                tr
+                  th.sortable(@click="toggleSort('time')")
+                    | Time
+                    i.fas.ms-1(v-if="sortKey === 'time'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                  th.sortable(@click="toggleSort('artist')")
+                    | Artist
+                    i.fas.ms-1(v-if="sortKey === 'artist'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                  th.sortable.venue-col(v-if="!isNarrow", @click="toggleSort('venue')")
+                    | Venue
+                    i.fas.ms-1(v-if="sortKey === 'venue'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+                  th.sortable(@click="toggleSort('price')")
+                    | Ticket
+                    i.fas.ms-1(v-if="sortKey === 'price'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
+              tbody
+                template(v-if="loading")
+                  tr(v-for="row in 6", :key="row")
+                    td
+                      .skeleton
+                    td
+                      .skeleton
+                    td.venue-col(v-if="!isNarrow")
+                      .skeleton
+                    td
+                      .skeleton
+                tr(
+                  v-for="(gig, index) in visibleRows",
+                  :key="index",
+                  :class="gig.venue_url && gig.venue_url === activeVenueUrl ? 'table-active' : ''",
+                  :data-venue-url="gig.venue_url"
+                  @click="selectGig(gig, $event)"
+                )
                   td
-                    .skeleton
+                    div(v-if="gig.time")
+                      | {{ gig.time }}
+                    div.text-muted(style="font-size: 0.7rem")
+                      | {{ formatDate(gig.date) }}
+                    div.text-muted(style="font-size: 0.7rem", v-if="gig.end_date")
+                      | → {{ formatDate(gig.end_date) }}
                   td
-                    .skeleton
+                    .artist-line
+                      span.artist-name
+                        | {{ gig.artist }}
+                      span.artist-icons
+                        a.ms-2(
+                          v-if="gig.detail_url",
+                          :href="gig.detail_url",
+                          target="_blank",
+                          rel="noopener",
+                          title="Open this gig on beat.com.au"
+                        )
+                          i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                        a.ms-2(
+                          v-if="gig.artist",
+                          :href="searchUrl(gig)",
+                          target="_blank",
+                          rel="noopener",
+                          title="Search the web for this artist"
+                        )
+                          i.fas.fa-search.text-muted(style="font-size: 0.8rem")
+                    div.text-muted(style="font-size: 0.7rem")
+                      | {{ tagLine(gig) }}
                   td.venue-col(v-if="!isNarrow")
-                    .skeleton
+                    .venue-line
+                      span.venue-name
+                        | {{ gig.venue }}
+                      span.venue-icons
+                        a.ms-2(
+                          v-if="gig.venue_url",
+                          :href="gig.venue_url",
+                          target="_blank",
+                          rel="noopener",
+                          title="Open the venue page on beat.com.au"
+                        )
+                          i.fas.fa-link.text-muted(style="font-size: 0.8rem")
                   td
-                    .skeleton
-              tr(
-                v-for="(gig, index) in visibleRows",
-                :key="index",
-                :class="gig.venue_url && gig.venue_url === activeVenueUrl ? 'table-active' : ''",
-                :data-venue-url="gig.venue_url"
-                @click="selectGig(gig, $event)"
-              )
-                td
-                  div(v-if="gig.time")
-                    | {{ gig.time }}
-                  div.text-muted(style="font-size: 0.7rem")
-                    | {{ formatDate(gig.date) }}
-                  div.text-muted(style="font-size: 0.7rem", v-if="gig.end_date")
-                    | → {{ formatDate(gig.end_date) }}
-                td
-                  .artist-line
-                    span.artist-name
-                      | {{ gig.artist }}
-                    span.artist-icons
-                      a.ms-2(
-                        v-if="gig.detail_url",
-                        :href="gig.detail_url",
-                        target="_blank",
-                        rel="noopener",
-                        title="Open this gig on beat.com.au"
-                      )
-                        i.fas.fa-link.text-muted(style="font-size: 0.8rem")
-                      a.ms-2(
-                        v-if="gig.artist",
-                        :href="searchUrl(gig)",
-                        target="_blank",
-                        rel="noopener",
-                        title="Search the web for this artist"
-                      )
-                        i.fas.fa-search.text-muted(style="font-size: 0.8rem")
-                  div.text-muted(style="font-size: 0.7rem")
-                    | {{ tagLine(gig) }}
-                td.venue-col(v-if="!isNarrow")
-                  .venue-line
-                    span.venue-name
-                      | {{ gig.venue }}
-                    span.venue-icons
-                      a.ms-2(
-                        v-if="gig.venue_url",
-                        :href="gig.venue_url",
-                        target="_blank",
-                        rel="noopener",
-                        title="Open the venue page on beat.com.au"
-                      )
-                        i.fas.fa-link.text-muted(style="font-size: 0.8rem")
-                td
-                  a.btn.btn-sm.btn-outline-primary(
-                    v-if="gig.ticket_url",
-                    :href="gig.ticket_url",
-                    target="_blank",
-                    rel="noopener"
-                  ) {{ gig.price || "Tickets" }}
-                  span.text-muted.small(v-if="!gig.ticket_url") {{ gig.price }}
+                    a.btn.btn-sm.btn-outline-primary(
+                      v-if="gig.ticket_url",
+                      :href="gig.ticket_url",
+                      target="_blank",
+                      rel="noopener"
+                    ) {{ gig.price || "Tickets" }}
+                    span.text-muted.small(v-if="!gig.ticket_url") {{ gig.price }}
 
-          .scroll-room
-          .text-muted.text-center.py-4(v-if="!gigs.length && !loading && startDate")
-            | No gigs in this range.
+            .scroll-room
+            .text-muted.text-center.py-4(v-if="!gigs.length && !loading && startDate")
+              | No gigs in this range.
     `);
 
-    const {createApp, ref, computed, nextTick, onMounted} = Vue;
+    const {createApp, ref, computed, nextTick, onMounted, watch} = Vue;
 
     const CALENDAR_WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -793,6 +845,7 @@
         const sideWidth = ref(null);
         let dragStartX = 0;
         let dragStartWidth = 0;
+        let dragLastY = 0;
 
         function startDrag(event) {
             const side = document.querySelector(".gig-side");
@@ -801,12 +854,19 @@
             }
             dragStartX = event.clientX;
             dragStartWidth = side.getBoundingClientRect().width;
+            dragLastY = event.clientY;
             window.addEventListener("pointermove", onDrag);
             window.addEventListener("pointerup", stopDrag);
             event.preventDefault();
         }
 
         function onDrag(event) {
+            if (isNarrow.value) {
+                // Narrow layout: the grabber scrolls the page.
+                window.scrollBy(0, dragLastY - event.clientY);
+                dragLastY = event.clientY;
+                return;
+            }
             const min = 240;
             const max = Math.max(min, window.innerWidth - 320);
             const wanted = dragStartWidth + (event.clientX - dragStartX);
@@ -1015,6 +1075,7 @@
         });
 
         const visibleRows = computed(() => (loading.value ? [] : visibleGigs.value));
+        watch([visibleRows, loading], () => nextTick(updateScrollEdges));
 
         const busy = computed(() => loading.value || timing.value || mapping.value);
 
@@ -1082,12 +1143,32 @@
             markerCount.value = markers.size;
         }
 
+        // The narrow layout shows a shadow on an edge when rows are hidden past it.
+        const scrollEdges = ref({above: false, below: false});
+        const frameClass = computed(() => ({
+            "has-above": scrollEdges.value.above,
+            "has-below": scrollEdges.value.below,
+        }));
+
+        function updateScrollEdges() {
+            const scroller = document.querySelector(".gig-scroll");
+            if (!scroller) {
+                return;
+            }
+            const above = scroller.scrollTop > 1;
+            const below = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
+            if (above !== scrollEdges.value.above || below !== scrollEdges.value.below) {
+                scrollEdges.value = {above, below};
+            }
+        }
+
         function scrollRoom(pixels) {
             // Only the narrow layout needs room below the last row.
             const room = document.querySelector(".scroll-room");
             if (room) {
                 room.style.height = isNarrow.value ? `${Math.max(0, pixels)}px` : "0px";
             }
+            updateScrollEdges();
         }
 
         const smoothScroll =
@@ -1336,6 +1417,7 @@
                 window.requestAnimationFrame(() => map.invalidateSize());
             }).observe(document.getElementById("map"));
             load(RANGES.find((range) => range.id === "today") || RANGES[0]);
+            new ResizeObserver(updateScrollEdges).observe(document.querySelector(".gig-scroll"));
         });
 
         return {
@@ -1360,6 +1442,8 @@
             isNarrow,
             markerCount,
             sideWidth,
+            frameClass,
+            updateScrollEdges,
             startDrag,
             activeVenueUrl,
             formatDate,
