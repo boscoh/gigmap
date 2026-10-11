@@ -341,10 +341,6 @@
               font-size: 0.7rem;
               padding: 0.05rem 0.1rem;
           }
-
-          .venue-address {
-              display: none;
-          }
       }
   </style>
 </head>
@@ -391,9 +387,6 @@
 
               .mt-3  
 
-              .text-muted.small(v-if="startDate")
-                span Showing {{ gigs.length }} gigs in table
-
               .text-muted.small(v-if="startDate && timing")
                 i.fas.fa-spinner.fa-spin.me-1
                 span(v-if="timing") Loading {{ timesLoaded }} of {{ timesTotal }} times...
@@ -402,9 +395,13 @@
                 i.fas.fa-spinner.fa-spin.me-1
                 span Looking up {{ mapped }} of {{ toMap }} venues...
 
-              .text-muted.small(v-if="!mapping && markerCount")
-                | Showing {{ markerCount }} venues on map
+              .text-muted.small(v-if="startDate")
+                span Showing {{ gigs.length }} gigs 
+                =" "
+                span(v-if="!mapping && markerCount")
+                    | in {{ markerCount }} venues 
 
+              .mt-3
               .mt-5
 
               .text-muted.small(v-if="!selectedGig")
@@ -511,7 +508,7 @@
                 :key="index",
                 :class="gig.venue_url && gig.venue_url === activeVenueUrl ? 'table-active' : ''",
                 :data-venue-url="gig.venue_url"
-                @click="selectGig(gig)"
+                @click="selectGig(gig, $event)"
               )
                 td
                   div(v-if="gig.time")
@@ -990,31 +987,38 @@
             }
         }
 
-        function scrollToVenue(venueUrl) {
+        function scrollRowToTop(row) {
             const scroller = document.querySelector(".gig-scroll");
-            const head = scroller ? scroller.querySelector("thead") : null;
+            if (!row || !scroller) {
+                return;
+            }
+            const head = scroller.querySelector("thead");
             const offset = head ? head.getBoundingClientRect().height : 0;
+            // Measure the table alone, so the room is exact.
+            scrollRoom(0);
+            if (scroller.scrollHeight <= scroller.clientHeight) {
+                return;
+            }
+            const short = row.getBoundingClientRect().top
+                - scroller.getBoundingClientRect().top
+                + scroller.scrollTop
+                - offset
+                - (scroller.scrollHeight - scroller.clientHeight);
+            scrollRoom(short);
+            // Read again: the room changed the scroll limit.
+            const delta = row.getBoundingClientRect().top
+                - scroller.getBoundingClientRect().top
+                - offset;
+            scroller.scrollBy({top: delta, behavior: "smooth"});
+        }
+
+        function scrollToVenue(venueUrl) {
             for (const row of document.querySelectorAll("tbody tr")) {
                 if (row.dataset.venueUrl !== venueUrl) {
                     continue;
                 }
-                if (isNarrow.value && scroller) {
-                    // Measure the table alone, so the room is exact.
-                    scrollRoom(0);
-                    if (scroller.scrollHeight <= scroller.clientHeight) {
-                        return;
-                    }
-                    const short = row.getBoundingClientRect().top
-                        - scroller.getBoundingClientRect().top
-                        + scroller.scrollTop
-                        - offset
-                        - (scroller.scrollHeight - scroller.clientHeight);
-                    scrollRoom(short);
-                    // Read again: the room changed the scroll limit.
-                    const delta = row.getBoundingClientRect().top
-                        - scroller.getBoundingClientRect().top
-                        - offset;
-                    scroller.scrollBy({top: delta, behavior: "smooth"});
+                if (isNarrow.value) {
+                    scrollRowToTop(row);
                 } else {
                     row.scrollIntoView({block: "center", behavior: "smooth"});
                 }
@@ -1075,9 +1079,12 @@
             }
         }
 
-        async function selectGig(gig) {
+        async function selectGig(gig, event) {
             selectedGig.value = gig;
             activeVenueUrl.value = gig.venue_url || "";
+            if (isNarrow.value && event) {
+                scrollRowToTop(event.currentTarget);
+            }
             if (!gig.venue_url) {
                 venue.value = {
                     loading: false,
