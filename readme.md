@@ -389,6 +389,7 @@ source, and the routes.
 - `docs/cleanup.md` — the data cleanup specification
 - `deploy.sh` — deploy the app to the tspots instance
 - `docs/deploy.md` — the deployment record
+- `docs/domain.md` — the domain name record
 - `tests/` — the pytest tests
 
 ## Limits
