@@ -122,7 +122,7 @@ traffic. See <https://operations.osmfoundation.org/policies/tiles/>.
 The tiles load for the current view only. Do not add a button that downloads
 an area.
 
-A CSS filter on the tile pane fades the tiles, so the map reads as a
+A CSS filter on the tile pane softens the tiles, so the map reads as a
 background for the table. The filter is on the pane, not on the map, so the
 markers and the popups keep their colour.
 

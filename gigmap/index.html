@@ -197,10 +197,10 @@
           border-radius: 0.25rem;
       }
 
-      /* Fade the tiles, so the map reads as a background. The filter is on
+      /* Soften the tiles, so the map reads as a background. The filter is on
          the tile pane only, so the markers and the popups keep their colour. */
       .leaflet-tile-pane {
-          filter: grayscale(1) brightness(1.12) contrast(0.85) sepia(0.12);
+          filter: saturate(0.7) brightness(1.05) contrast(0.95);
       }
 
       .gig-popup {
