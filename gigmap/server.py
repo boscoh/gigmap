@@ -5,9 +5,8 @@ import re
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
-from typing import Annotated, NamedTuple
+from typing import Annotated
 
 import uvicorn
 from cyclopts import App, Parameter
@@ -23,7 +22,6 @@ from gigmap import beat, sources, stores
 PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PACKAGE_DIR.parent
 DATA_DIR_ENV = "GIGMAP_DATA_DIR"
-CACHE_SECONDS = stores.DAYS_CACHE_SECONDS
 SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
 SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
 
@@ -35,9 +33,6 @@ CLEANUP_INTERVAL_SECONDS = 24 * 3600
 DETAIL_CONCURRENCY = 5
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-SAVED_FILE_RE = re.compile(
-    r"gigmap_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
-)
 
 
 async def cleanup_loop() -> None:
@@ -222,15 +217,6 @@ def use_data_dir(data_dir: Path | None) -> None:
         os.environ[DATA_DIR_ENV] = str(data_dir)
 
 
-class CleanReport(NamedTuple):
-    """The count of the files that the cleanup removed."""
-
-    days: int
-    gigs: int
-    size: int
-    skipped: int
-
-
 def format_size(size: int) -> str:
     if size >= 1024 * 1024:
         return f"{size / (1024 * 1024):.1f} MB"
@@ -239,62 +225,13 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
-def remove_file(path: Path, dry_run: bool) -> int:
-    """Remove one file and return its size. Return 0 when the removal fails."""
-    try:
-        size = path.stat().st_size
-        if not dry_run:
-            path.unlink(missing_ok=True)
-    except OSError:
-        return 0
-    return size
-
-
-def old_enough(path: Path, now: float, seconds: float) -> bool:
-    """Return True when the file age is at least `seconds`."""
-    try:
-        return now - path.stat().st_mtime >= seconds
-    except OSError:
-        return False
-
-
-def clean_data(now: float, gig_days: int, dry_run: bool) -> CleanReport:
-    """Remove the day files of a past range and the old gig time files."""
-    today = datetime.fromtimestamp(now).date().isoformat()
-    day_count = 0
-    gig_count = 0
-    size = 0
-    skipped = 0
-
-    for path in sorted((data_dir() / "days").glob("*.json")):
-        match = SAVED_FILE_RE.fullmatch(path.name)
-        if match is None or match.group("end") >= today:
-            continue
-        if not old_enough(path, now, CACHE_SECONDS):
-            skipped += 1
-            continue
-        size += remove_file(path, dry_run)
-        day_count += 1
-
-    for path in sorted((data_dir() / "gigs").glob("*.json")):
-        if not old_enough(path, now, gig_days * 86400):
-            continue
-        if not old_enough(path, now, CACHE_SECONDS):
-            skipped += 1
-            continue
-        size += remove_file(path, dry_run)
-        gig_count += 1
-
-    return CleanReport(days=day_count, gigs=gig_count, size=size, skipped=skipped)
-
-
 def run_cleanup(
     gig_days: int = GIG_TTL_DAYS,
     dry_run: bool = False,
     quiet: bool = False,
-) -> CleanReport:
+) -> stores.CleanReport:
     """Remove the old data files and print the result."""
-    report = clean_data(time.time(), gig_days, dry_run)
+    report = stores.clean_data(data_dir(), time.time(), gig_days, dry_run)
     if quiet:
         return report
     verb = "would remove" if dry_run else "removed"
@@ -304,7 +241,11 @@ def run_cleanup(
         flush=True,
     )
     if report.skipped:
-        print(f"kept {report.skipped} files younger than {CACHE_SECONDS} seconds", flush=True)
+        print(
+            f"kept {report.skipped} files younger than "
+            f"{stores.DAYS_CACHE_SECONDS} seconds",
+            flush=True,
+        )
     return report
 
 

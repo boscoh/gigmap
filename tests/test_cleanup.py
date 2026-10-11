@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gigmap import server
+from gigmap import server, stores
 
 OLD = 40 * 86400
 
@@ -36,7 +36,7 @@ def test_clean_data_removes_only_the_old_files(data_dir: Path) -> None:
     new_gig = write(data_dir / "gigs" / "new.json", 0)
     venue = write(data_dir / "venues" / "keep.json", OLD)
 
-    report = server.clean_data(time.time(), server.GIG_TTL_DAYS, dry_run=False)
+    report = stores.clean_data(data_dir, time.time(), server.GIG_TTL_DAYS, dry_run=False)
 
     assert not stale_day.exists()
     assert not old_gig.exists()
@@ -52,7 +52,7 @@ def test_clean_data_dry_run_removes_nothing(data_dir: Path) -> None:
     stale_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", OLD)
     old_gig = write(data_dir / "gigs" / "old.json", OLD)
 
-    report = server.clean_data(time.time(), server.GIG_TTL_DAYS, dry_run=True)
+    report = stores.clean_data(data_dir, time.time(), server.GIG_TTL_DAYS, dry_run=True)
 
     assert stale_day.exists()
     assert old_gig.exists()
@@ -63,7 +63,7 @@ def test_clean_data_dry_run_removes_nothing(data_dir: Path) -> None:
 def test_a_recent_file_is_skipped(data_dir: Path) -> None:
     fresh_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", 0)
 
-    report = server.clean_data(time.time(), server.GIG_TTL_DAYS, dry_run=False)
+    report = stores.clean_data(data_dir, time.time(), server.GIG_TTL_DAYS, dry_run=False)
 
     assert fresh_day.exists()
     assert report.days == 0
