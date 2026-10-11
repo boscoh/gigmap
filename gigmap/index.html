@@ -355,6 +355,24 @@
           cursor: pointer;
       }
 
+      .artist-line,
+      .venue-line {
+          display: flex;
+          align-items: flex-start;
+      }
+
+      .artist-name,
+      .venue-name {
+          min-width: 0;
+      }
+
+      .artist-icons,
+      .venue-icons {
+          flex: 0 0 auto;
+          margin-left: auto;
+          white-space: nowrap;
+      }
+
       @media (min-width: 992px) {
           .gig-side {
               flex: 0 0 var(--side-width, 50%);
@@ -419,10 +437,10 @@
     let template = renderHtmlFromPug(/* pug */`
       .container-fluid.py-3.app-shell.d-flex.flex-column.flex-lg-row.gap-lg-2
         .gig-side.mb-4.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
-          .d-flex.align-items-center
+          .gig-head.d-flex.align-items-center(v-if="!isNarrow")
             h1.mb-0
               | ${SOURCE.title}
-          .text-muted(style="font-size: 0.7rem")
+          .gig-head.text-muted(v-if="!isNarrow", style="font-size: 0.7rem")
             | Data @ 
             a.me-2(
                 href="${SOURCE.home_url}",
@@ -432,7 +450,18 @@
             ) ${SOURCE.name}
           .d-flex.gap-3.mt-3.align-items-start
             .summary.flex-grow-1.overflow-hidden
-              .d-flex.flex-nowrap.gap-2
+              template(v-if="isNarrow")
+                h1.mb-0.text-nowrap
+                  | ${SOURCE.title}
+                .text-muted(style="font-size: 0.7rem")
+                  | Data @ 
+                  a.me-2(
+                      href="${SOURCE.home_url}",
+                      target="_blank",
+                      rel="noopener",
+                      title="Search beat.com.au"
+                  ) ${SOURCE.name}
+              .d-flex.flex-nowrap.gap-2(v-if="!isNarrow")
                 button.calendar-day(
                   v-for="range in ranges",
                   :key="range.id",
@@ -563,35 +592,41 @@
                   div.text-muted(style="font-size: 0.7rem", v-if="gig.end_date")
                     | → {{ formatDate(gig.end_date) }}
                 td
-                  | {{ gig.artist }}
-                  a.ms-2(
-                    v-if="gig.detail_url",
-                    :href="gig.detail_url",
-                    target="_blank",
-                    rel="noopener",
-                    title="Open this gig on beat.com.au"
-                  )
-                    i.fas.fa-link.text-muted(style="font-size: 0.8rem")
-                  a.ms-2(
-                    v-if="gig.artist",
-                    :href="searchUrl(gig)",
-                    target="_blank",
-                    rel="noopener",
-                    title="Search the web for this artist"
-                  )
-                    i.fas.fa-search.text-muted(style="font-size: 0.8rem")
+                  .artist-line
+                    span.artist-name
+                      | {{ gig.artist }}
+                    span.artist-icons
+                      a.ms-2(
+                        v-if="gig.detail_url",
+                        :href="gig.detail_url",
+                        target="_blank",
+                        rel="noopener",
+                        title="Open this gig on beat.com.au"
+                      )
+                        i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                      a.ms-2(
+                        v-if="gig.artist",
+                        :href="searchUrl(gig)",
+                        target="_blank",
+                        rel="noopener",
+                        title="Search the web for this artist"
+                      )
+                        i.fas.fa-search.text-muted(style="font-size: 0.8rem")
                   div.text-muted(style="font-size: 0.7rem")
                     | {{ tagLine(gig) }}
                 td.venue-col(v-if="!isNarrow")
-                  | {{ gig.venue }}
-                  a.ms-2(
-                    v-if="gig.venue_url",
-                    :href="gig.venue_url",
-                    target="_blank",
-                    rel="noopener",
-                    title="Open the venue page on beat.com.au"
-                  )
-                    i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                  .venue-line
+                    span.venue-name
+                      | {{ gig.venue }}
+                    span.venue-icons
+                      a.ms-2(
+                        v-if="gig.venue_url",
+                        :href="gig.venue_url",
+                        target="_blank",
+                        rel="noopener",
+                        title="Open the venue page on beat.com.au"
+                      )
+                        i.fas.fa-link.text-muted(style="font-size: 0.8rem")
                 td
                   a.btn.btn-sm.btn-outline-primary(
                     v-if="gig.ticket_url",

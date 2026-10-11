@@ -8,10 +8,12 @@ The page has two columns. The left column holds the title, the day buttons, a
 month calendar, and a street map. The right column holds the gig table. On a
 wide screen, drag the splitter between the columns to change the width.
 
-On a narrow screen, the title and the calendar are smaller, the address is
-hidden, and the table does not show the Venue column.
+On a narrow screen, the title and the data line show at the top of the left
+column, beside the calendar. The day buttons are hidden. Click a day in the
+calendar to load it. The calendar is smaller, the address is hidden, and the
+table does not show the Venue column.
 
-The header shows the title and a link to the Beat gig guide page.
+On a wide screen, the header shows the title and a link to the Beat gig guide page.
 
 ## Buttons
 
@@ -82,8 +84,8 @@ The watcher looks at `.py` files only. This is correct for the other files:
 | Column | Content |
 | --- | --- |
 | Time | the start time in black, for example "6:30pm". Small muted text below it shows the day and the month, for example "10 Oct". An end date follows after an arrow |
-| Artist | the band name. A link icon after the name opens the gig page on beat.com.au. A search icon opens a web search for the artist, the categories, and the genres. Small muted text below the name shows the categories and the genres, separated by a slash |
-| Venue | the venue name, and a link icon to the venue page |
+| Artist | the band name. A link icon after the name opens the gig page on beat.com.au. A search icon opens a web search for the artist, the categories, and the genres. Small muted text below the name shows the categories and the genres, separated by a slash. The icons sit at the right edge of the cell |
+| Venue | the venue name, and a link icon to the venue page. The icon sits at the right edge of the cell |
 | Ticket | a button. The text is the price. The link goes to the ticket shop |
 
 Click a row to select the gig. The map moves to that venue. Click a map marker
