@@ -7,6 +7,10 @@
   <!-- prevent auto-zooming on mobile browsers -->
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
+  <!-- The server fills these from the source (beat.SOURCE). -->
+  <title>__SOURCE_TITLE__</title>
+  <script>window.SOURCE = __SOURCE_INFO__;</script>
+
   <!-- Bootstrap -->
   <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css"
@@ -377,22 +381,24 @@
 </body>
 
 <script>
+    // The server writes the source details into <head>.
+    const SOURCE = window.SOURCE;
     /* language=pug */
     let template = renderHtmlFromPug(/* pug */`
       .container-fluid.py-3.app-shell.d-flex.flex-column.flex-lg-row.gap-lg-2
         .gig-side.mb-4.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
           .d-flex.align-items-center
             h1.mb-0
-              | Melb Gig Map
+              | ${SOURCE.title}
 
           .small.muted
             | Data from 
             a.me-2(
-                href="https://beat.com.au/gig-guide/",
+                href="${SOURCE.home_url}",
                 target="_blank",
                 rel="noopener",
                 title="Search beat.com.au"
-            ) beat magazine
+            ) ${SOURCE.name}
           .d-flex.gap-3.mt-3.align-items-start
             .flex-grow-1
               .d-flex.flex-wrap.gap-2
@@ -1145,7 +1151,6 @@
         }
 
         onMounted(() => {
-            document.title = "Melb Gig Map";
             map = L.map("map").setView(MELBOURNE, 11);
             L.tileLayer(TILE_URL, {
                 maxZoom: 19,

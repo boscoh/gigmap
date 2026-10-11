@@ -14,6 +14,18 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 
+class SourceInfo(BaseModel):
+    """The app details of one source.
+
+    The app serves one source, so the source carries the page title and
+    the attribution that the app shows.
+    """
+
+    title: str
+    name: str
+    home_url: str
+
+
 class SourceError(Exception):
     """The source cannot answer a request."""
 

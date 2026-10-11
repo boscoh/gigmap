@@ -17,6 +17,13 @@ from gigmap import sources
 BEAT_URL = "https://beat.com.au/gig-guide/"
 BEAT_ORIGIN = "https://beat.com.au/"
 
+# The app serves this one site, so the source carries the app details.
+SOURCE = sources.SourceInfo(
+    title="Melb Gig Map",
+    name="beat magazine",
+    home_url=BEAT_URL,
+)
+
 VENUE_URL_HINT = "venue_url must have the form https://beat.com.au/directory/<name>/"
 
 HEAD_RE = re.compile(r"<head[^>]*>", re.IGNORECASE)

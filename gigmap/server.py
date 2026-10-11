@@ -13,7 +13,6 @@ import uvicorn
 from cyclopts import App, Parameter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import (
-    FileResponse,
     HTMLResponse,
     JSONResponse,
     StreamingResponse,
@@ -25,6 +24,10 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PACKAGE_DIR.parent
 DATA_DIR_ENV = "GIGMAP_DATA_DIR"
 CACHE_SECONDS = stores.DAYS_CACHE_SECONDS
+SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
+SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
+
+
 def env_int(name: str, default: int) -> int:
     """Read a non-negative integer from the environment."""
     try:
@@ -66,7 +69,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         task.cancel()
 
 
-app = FastAPI(title="Gig Guide", lifespan=lifespan)
+app = FastAPI(title=beat.SOURCE.title, lifespan=lifespan)
 
 
 async def source_dependency(
@@ -107,8 +110,11 @@ def validate_dates(start_date: str, end_date: str) -> None:
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(PACKAGE_DIR / "index.html")
+async def index() -> HTMLResponse:
+    """Serve the page with the source details filled in."""
+    html = (PACKAGE_DIR / "index.html").read_text(encoding="utf-8")
+    html = html.replace(SOURCE_TITLE_TOKEN, beat.SOURCE.title)
+    return HTMLResponse(html.replace(SOURCE_INFO_TOKEN, beat.SOURCE.model_dump_json()))
 
 
 @app.get("/api/page", response_class=HTMLResponse)
