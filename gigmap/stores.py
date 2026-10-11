@@ -1,7 +1,7 @@
 """The disk stores of the app and the cached source.
 
-One `CacheEntry` describes each cache kind. `CachedSource` builds the three
-stores from the data directory, so the caller does not pass them.
+`CachedSource` builds the three stores from the data directory, so the
+caller does not pass them.
 """
 
 from collections.abc import Callable
@@ -17,25 +17,6 @@ def has_coordinates(venue: sources.Venue) -> bool:
     return venue.latitude is not None and venue.longitude is not None
 
 
-DAYS = cache.CacheEntry(
-    subdir="days",
-    adapter=TypeAdapter(list[sources.Gig]),
-    filename=lambda key: f"gigmap_{key}.json",
-    max_age=cache.MIN_AGE_SECONDS,
-)
-
-GIGS = cache.CacheEntry(
-    subdir="gigs",
-    adapter=TypeAdapter(sources.GigDetail),
-)
-
-VENUES = cache.CacheEntry(
-    subdir="venues",
-    adapter=TypeAdapter(sources.Venue),
-    valid=has_coordinates,
-)
-
-
 class CachedSource:
     """Cache the reads of one source on disk. Implement `GigSource`."""
 
@@ -47,9 +28,17 @@ class CachedSource:
     ) -> None:
         self._source = source
         self._refresh = refresh
-        self._days = cache.JsonCache(data_dir, DAYS)
-        self._gigs = cache.JsonCache(data_dir, GIGS)
-        self._venues = cache.JsonCache(data_dir, VENUES)
+        self._days = cache.JsonCache(
+            data_dir,
+            "days",
+            TypeAdapter(list[sources.Gig]),
+            filename=lambda key: f"gigmap_{key}.json",
+            max_age=cache.MIN_AGE_SECONDS,
+        )
+        self._gigs = cache.JsonCache(data_dir, "gigs", TypeAdapter(sources.GigDetail))
+        self._venues = cache.JsonCache(
+            data_dir, "venues", TypeAdapter(sources.Venue), valid=has_coordinates
+        )
 
     async def page(self, start_date: str, end_date: str) -> str:
         return await self._source.page(start_date, end_date)

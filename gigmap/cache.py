@@ -1,18 +1,17 @@
 """Save and read the JSON data files through one small abstraction.
 
-One `CacheEntry` describes a cache kind as data: the subdirectory, the value
-type, the file name, the freshness rule, and the validity rule. One
-`JsonCache` does the shared work: build the path, validate on read, and write
+One `JsonCache` holds the rules of one cache kind: the subdirectory, the
+value type, the file name, the freshness rule, and the validity rule. It
+does the shared work: build the path, validate on read, and write
 atomically.
 
-`stores.py` declares one `CacheEntry` for each data kind.
+`stores.py` creates one `JsonCache` for each data kind.
 """
 
 import os
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -29,35 +28,37 @@ def default_filename(key: str) -> str:
     return f"{key}.json"
 
 
-@dataclass(frozen=True)
-class CacheEntry(Generic[M]):
-    """The rules of one cache kind."""
-
-    subdir: str
-    adapter: TypeAdapter[M]
-    filename: Callable[[str], str] = default_filename
-    max_age: float | None = None
-    valid: Callable[[M], bool] | None = None
-
-
 class JsonCache(Generic[M]):
     """One JSON file cache on disk."""
 
-    def __init__(self, root: Callable[[], Path], entry: CacheEntry[M]) -> None:
+    def __init__(
+        self,
+        root: Callable[[], Path],
+        subdir: str,
+        adapter: TypeAdapter[M],
+        *,
+        filename: Callable[[str], str] = default_filename,
+        max_age: float | None = None,
+        valid: Callable[[M], bool] | None = None,
+    ) -> None:
         self._root = root
-        self.entry = entry
+        self._subdir = subdir
+        self._adapter = adapter
+        self._filename = filename
+        self._max_age = max_age
+        self._valid = valid
 
     def directory(self) -> Path:
-        return self._root() / self.entry.subdir
+        return self._root() / self._subdir
 
     def path(self, key: str) -> Path:
-        return self.directory() / self.entry.filename(key)
+        return self.directory() / self._filename(key)
 
     def load(self, key: str, *, now: float | None = None) -> M | None:
         """Read one fresh value. None when absent, damaged, or stale."""
         path = self.path(key)
         try:
-            value = self.entry.adapter.validate_json(path.read_text(encoding="utf-8"))
+            value = self._adapter.validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
         if self._is_fresh(value, path, time.time() if now is None else now):
@@ -68,7 +69,7 @@ class JsonCache(Generic[M]):
         """Write one value through a temporary file."""
         path = self.path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = self.entry.adapter.dump_json(value, indent=2)
+        data = self._adapter.dump_json(value, indent=2)
         handle, name = tempfile.mkstemp(
             dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
         )
@@ -99,17 +100,16 @@ class JsonCache(Generic[M]):
                 return hit
         value = await origin()
         if value is not None:
-            if self.entry.valid is None or self.entry.valid(value):
+            if self._valid is None or self._valid(value):
                 self.save(key, value)
         return value
 
     def _is_fresh(self, value: M, path: Path, now: float) -> bool:
-        valid = self.entry.valid
-        if valid is not None and not valid(value):
+        if self._valid is not None and not self._valid(value):
             return False
-        if self.entry.max_age is None:
+        if self._max_age is None:
             return True
         try:
-            return now - path.stat().st_mtime < self.entry.max_age
+            return now - path.stat().st_mtime < self._max_age
         except OSError:
             return False

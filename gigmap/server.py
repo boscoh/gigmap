@@ -270,7 +270,7 @@ def clean_data(now: float, gig_days: int, dry_run: bool) -> CleanReport:
     size = 0
     skipped = 0
 
-    for path in sorted((data_dir() / stores.DAYS.subdir).glob("*.json")):
+    for path in sorted((data_dir() / "days").glob("*.json")):
         match = SAVED_FILE_RE.fullmatch(path.name)
         if match is None or match.group("end") >= today:
             continue
@@ -280,7 +280,7 @@ def clean_data(now: float, gig_days: int, dry_run: bool) -> CleanReport:
         size += remove_file(path, dry_run)
         day_count += 1
 
-    for path in sorted((data_dir() / stores.GIGS.subdir).glob("*.json")):
+    for path in sorted((data_dir() / "gigs").glob("*.json")):
         if not old_enough(path, now, gig_days * 86400):
             continue
         if not old_enough(path, now, CACHE_SECONDS):
