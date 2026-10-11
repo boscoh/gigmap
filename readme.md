@@ -115,9 +115,16 @@ without coordinates, and the map has no marker for it.
 The map uses Leaflet. The OpenStreetMap embed page shows one marker only, so a
 map with many markers needs a slippy map library.
 
-The tiles come from the Esri World Street Map service at
-`server.arcgisonline.com`. The map shows the Esri attribution. The tiles load
-for the current view only. Do not add a button that downloads an area.
+The tiles come from the OpenStreetMap standard tile service at
+`tile.openstreetmap.org`. The map shows the OpenStreetMap attribution. The
+tile usage policy applies: a valid referrer, no bulk download, and no heavy
+traffic. See <https://operations.osmfoundation.org/policies/tiles/>.
+The tiles load for the current view only. Do not add a button that downloads
+an area.
+
+A CSS filter on the tile pane fades the tiles, so the map reads as a
+background for the table. The filter is on the pane, not on the map, so the
+markers and the popups keep their colour.
 
 ## Nominatim usage policy — read this
 

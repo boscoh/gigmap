@@ -197,6 +197,12 @@
           border-radius: 0.25rem;
       }
 
+      /* Fade the tiles, so the map reads as a background. The filter is on
+         the tile pane only, so the markers and the popups keep their colour. */
+      .leaflet-tile-pane {
+          filter: grayscale(1) brightness(1.12) contrast(0.85) sepia(0.12);
+      }
+
       .gig-popup {
           width: 100%;
           border-collapse: collapse;
@@ -505,13 +511,6 @@
           .map-wrap.mt-2
             div#map
 
-          .text-muted.mt-1(style="font-size: 0.7rem")
-            a(
-              href="https://www.openstreetmap.org/fixthemap",
-              target="_blank",
-              rel="noopener"
-            ) Report a map issue
-
         .splitter(@pointerdown="startDrag", title="Drag to resize")
         .gig-scroll.flex-grow-1(style="min-height: 0")
 
@@ -650,15 +649,12 @@
 
     const MELBOURNE = [-37.8136, 144.9631];
 
-    // Esri World Street Map: a lighter palette, closer to Google Maps than the
-    // OpenStreetMap default style. Note the tile order: {z}/{y}/{x}.
-    const TILE_URL =
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
-    // The source list from the service metadata.
+    // The OpenStreetMap standard tiles: a short credit and no API key. This
+    // tile server does not serve retina tiles, so the URL has no {r}.
+    const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     const TILE_ATTRIBUTION =
-        "Tiles &copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, " +
-        "INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, " +
-        "Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community";
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
+        "contributors";
 
     function escapeHtml(value) {
         return String(value == null ? "" : value)
