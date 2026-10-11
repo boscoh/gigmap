@@ -67,7 +67,7 @@ To make the environment again, run `uv sync`.
 uv run gigmap serve -r
 ```
 
-The server restarts after each change to `server.py`. The command works from
+The server restarts after each change to a `.py` file. The command works from
 any directory, because the watcher watches the project directory.
 
 The watcher looks at `.py` files only. This is correct for the other files:
@@ -298,6 +298,71 @@ that page in an iframe from another origin. The server fetches the page
 instead. The server also adds a `<base href="https://beat.com.au/">` tag, so
 the relative links in the page work. This matters for `GET /api/page` only.
 
+## The source
+
+`sources.py` declares the `GigSource` protocol and the Pydantic data
+classes `Gig`, `GigDetail`, and `Venue`. The protocol returns data, not
+pages. It does not name a site:
+
+```python
+class GigSource(Protocol):
+    async def page(self, start_date: str, end_date: str) -> str
+    async def gigs(self, start_date: str, end_date: str) -> list[Gig]
+    async def gig_detail(self, detail_url: str) -> GigDetail | None
+    async def venue(self, venue_url: str) -> Venue
+```
+
+`beat.py` holds `BeatSource`. This class is the only reader of
+`beat.com.au`. It implements the protocol.
+
+`sources.SourceError` means that the source cannot answer. The server
+answers `502`. `sources.SourceUrlError` means that the source rejects the
+url. The server answers `400`.
+
+`stores.py` declares `CachedSource`. This class implements `GigSource` and
+wraps another source with the disk stores. It builds the three stores from
+the data directory, so the caller passes only the source and the directory.
+
+The FastAPI dependency `source_dependency` gives one source for each
+request, then closes it. The dependency builds `CachedSource` around
+`BeatSource` and passes `data_dir`. It reads the
+`refresh` query parameter and gives the value to the wrapper. A test
+replaces the source with a fake:
+
+```python
+server.app.dependency_overrides[server.source_dependency] = lambda: fake
+```
+
+## The cache
+
+`cache.py` holds the reusable disk cache. `CacheEntry` describes one cache
+kind as data: the subdirectory, the value type, the file name, the
+freshness rule, the validity rule, and the retention rule.
+`JsonCache` does the shared work: it builds the path, validates on read,
+writes through a temporary file, and evicts the old files.
+
+`JsonCache.fetch` runs one cached read: load the value, or call the origin,
+and store the result when it is valid. A value that fails the validity rule
+is returned but not stored.
+
+`stores.py` declares one `CacheEntry` for each data kind:
+
+| Cache | Directory | Freshness | Cleanup |
+| --- | --- | --- | --- |
+| `DAYS` | `data/days/` | 600 seconds | a date range before today |
+| `GIGS` | `data/gigs/` | never stale | older than `GIG_TTL_DAYS` |
+| `VENUES` | `data/venues/` | only with the coordinates | never |
+
+`stores.CachedSource` reads and writes all three stores. The `venue` method
+calls `geocode.enrich_venue`, so the value holds the geocode and the map
+links, and the `VENUES` entry has the `valid` rule, so the wrapper stores
+the venue only when it has the coordinates. The `/api/venue` route is then
+one line.
+
+`geocode.py` holds the only code that talks to nominatim.openstreetmap.org.
+It enforces one request per second. The geocode is the most costly read,
+so the venue is the store that matters most.
+
 ## Tests
 
 ```bash
@@ -307,11 +372,19 @@ uv run pytest
 `tests/test_cleanup.py` covers the cleanup rules, the report, the loop that
 repeats, and the lifespan that starts and stops the loop.
 
+`tests/test_source.py` covers the `GigSource` protocol, the injected
+source, and the routes.
+
 ## Files
 
 - `index.html` — one page Vue 3 application. Vue, Bootstrap, Pug, Lodash, and
   Ky come from CDN. The layout comes from `~/p/onepageapp`.
-- `server.py` — the FastAPI server, the parser, and the venue lookup
+- `server.py` — the FastAPI server, the HTTP routes, and the data cleanup
+- `stores.py` — the three cache kinds and `CachedSource`
+- `cache.py` — the reusable JSON disk cache and the retention rules
+- `geocode.py` — the Nominatim lookup and the map links
+- `sources.py` — the `GigSource` protocol, the data classes, and the errors
+- `beat.py` — the beat.com.au rules: the URLs, the parsers, and `BeatSource`
 - `pyproject.toml` — the packages and the console script
 - `pyrightconfig.json` — points Pyright at the `.venv` directory
 - `data/` — the saved JSON data, the venue data, and the saved gig times

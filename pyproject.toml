@@ -9,6 +9,7 @@ dependencies = [
     "fastapi",
     "httpx",
     "lxml",
+    "pydantic",
     "uvicorn[standard]",
 ]
 
@@ -20,7 +21,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["server"]
+py-modules = ["server", "beat", "cache", "geocode", "sources", "stores"]
 
 [dependency-groups]
 dev = [
