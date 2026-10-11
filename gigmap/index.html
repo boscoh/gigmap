@@ -129,6 +129,12 @@
           white-space: nowrap;
       }
 
+      .venue-group .venue-name,
+      .venue-group .venue-address {
+          overflow: visible;
+          white-space: normal;
+      }
+
       .status-chip {
           align-items: center;
           background: none;
@@ -457,7 +463,7 @@
                 .text-muted.small(v-if="!selectedGig")
                   | Click a row to focus a venue.
 
-                div(v-if="selectedGig")
+                div.venue-name(v-if="selectedGig")
                   | {{ selectedGig.venue }}
                 .text-muted.small(v-if="venue.loading")
                   | Looking up the address...
