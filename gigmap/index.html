@@ -410,11 +410,7 @@
 
           .splitter {
               flex: 0 0 2.25rem;
-              cursor: grab;
-          }
-
-          .splitter:active {
-              cursor: grabbing;
+              pointer-events: none;
           }
 
           .splitter::before {
@@ -453,6 +449,10 @@
 
           .gig-frame.has-above thead th {
               box-shadow: 0 0.3rem 0.4rem -0.3rem rgba(33, 37, 41, 0.3);
+          }
+
+          .gig-table tr > :first-child {
+              padding-left: 0.75rem;
           }
 
           h1 {
@@ -591,7 +591,7 @@
           .map-wrap.mt-2
             div#map
 
-        .splitter(@pointerdown="startDrag", :title="isNarrow ? 'Drag to scroll the page' : 'Drag to resize'")
+        .splitter(@pointerdown="startDrag", title="Drag to resize")
         .gig-frame(:class="frameClass")
           .gig-scroll.flex-grow-1(style="min-height: 0", @scroll="updateScrollEdges")
 
@@ -845,7 +845,6 @@
         const sideWidth = ref(null);
         let dragStartX = 0;
         let dragStartWidth = 0;
-        let dragLastY = 0;
 
         function startDrag(event) {
             const side = document.querySelector(".gig-side");
@@ -854,19 +853,12 @@
             }
             dragStartX = event.clientX;
             dragStartWidth = side.getBoundingClientRect().width;
-            dragLastY = event.clientY;
             window.addEventListener("pointermove", onDrag);
             window.addEventListener("pointerup", stopDrag);
             event.preventDefault();
         }
 
         function onDrag(event) {
-            if (isNarrow.value) {
-                // Narrow layout: the grabber scrolls the page.
-                window.scrollBy(0, dragLastY - event.clientY);
-                dragLastY = event.clientY;
-                return;
-            }
             const min = 240;
             const max = Math.max(min, window.innerWidth - 320);
             const wanted = dragStartWidth + (event.clientX - dragStartX);
