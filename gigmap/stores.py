@@ -4,17 +4,12 @@ One `CacheEntry` describes each cache kind. `CachedSource` builds the three
 stores from the data directory, so the caller does not pass them.
 """
 
-import re
 from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import TypeAdapter
 
 from gigmap import cache, geocode, sources
-
-SAVED_FILE_RE = re.compile(
-    r"gigmap_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
-)
 
 
 def has_coordinates(venue: sources.Venue) -> bool:
@@ -27,13 +22,11 @@ DAYS = cache.CacheEntry(
     adapter=TypeAdapter(list[sources.Gig]),
     filename=lambda key: f"gigmap_{key}.json",
     max_age=cache.MIN_AGE_SECONDS,
-    retention=cache.PastRange(SAVED_FILE_RE),
 )
 
 GIGS = cache.CacheEntry(
     subdir="gigs",
     adapter=TypeAdapter(sources.GigDetail),
-    retention=cache.OlderThan(),
 )
 
 VENUES = cache.CacheEntry(

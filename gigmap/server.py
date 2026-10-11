@@ -42,6 +42,9 @@ CLEANUP_INTERVAL_SECONDS = 24 * 3600
 DETAIL_CONCURRENCY = 5
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+SAVED_FILE_RE = re.compile(
+    r"gigmap_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
+)
 
 
 async def cleanup_loop() -> None:
@@ -240,19 +243,53 @@ def format_size(size: int) -> str:
     return f"{size} B"
 
 
+def remove_file(path: Path, dry_run: bool) -> int:
+    """Remove one file and return its size. Return 0 when the removal fails."""
+    try:
+        size = path.stat().st_size
+        if not dry_run:
+            path.unlink(missing_ok=True)
+    except OSError:
+        return 0
+    return size
+
+
+def old_enough(path: Path, now: float, seconds: float) -> bool:
+    """Return True when the file age is at least `seconds`."""
+    try:
+        return now - path.stat().st_mtime >= seconds
+    except OSError:
+        return False
+
+
 def clean_data(now: float, gig_days: int, dry_run: bool) -> CleanReport:
     """Remove the day files of a past range and the old gig time files."""
     today = datetime.fromtimestamp(now).date().isoformat()
-    days = cache.JsonCache(data_dir, stores.DAYS)
-    gigs = cache.JsonCache(data_dir, stores.GIGS)
-    day_report = days.evict(now, today=today, dry_run=dry_run)
-    gig_report = gigs.evict(now, days=gig_days, dry_run=dry_run)
-    return CleanReport(
-        days=day_report.removed,
-        gigs=gig_report.removed,
-        size=day_report.size + gig_report.size,
-        skipped=day_report.skipped + gig_report.skipped,
-    )
+    day_count = 0
+    gig_count = 0
+    size = 0
+    skipped = 0
+
+    for path in sorted((data_dir() / stores.DAYS.subdir).glob("*.json")):
+        match = SAVED_FILE_RE.fullmatch(path.name)
+        if match is None or match.group("end") >= today:
+            continue
+        if not old_enough(path, now, CACHE_SECONDS):
+            skipped += 1
+            continue
+        size += remove_file(path, dry_run)
+        day_count += 1
+
+    for path in sorted((data_dir() / stores.GIGS.subdir).glob("*.json")):
+        if not old_enough(path, now, gig_days * 86400):
+            continue
+        if not old_enough(path, now, CACHE_SECONDS):
+            skipped += 1
+            continue
+        size += remove_file(path, dry_run)
+        gig_count += 1
+
+    return CleanReport(days=day_count, gigs=gig_count, size=size, skipped=skipped)
 
 
 def run_cleanup(
