@@ -438,25 +438,16 @@
 
               .mt-3  
 
-              .d-flex.flex-column
-                .d-flex.flex-row.small.text-muted
-                  button.status-chip(
-                    type="button",
-                    :disabled="loading",
-                    @click="refresh()",
-                    title="Refresh"
-                  )
-                    i.fas.fa-sync-alt(:class="loading ? 'fa-spin' : ''")
-                  template(v-if="startDate && gigs.length") 
-                    | {{ gigs.length }} gigs
-                    =" "
-                  template(v-if="!mapping && markerCount") in {{ markerCount }} venues
-                .status-chip(v-if="startDate && timing")
-                  i.fas.fa-spinner.fa-spin
-                  span Loading {{ timesLoaded }} of {{ timesTotal }} times...
-                .status-chip(v-if="mapping")
-                  i.fas.fa-spinner.fa-spin
-                  span Loading {{ mapped }} of {{ toMap }} venues...
+              .d-flex.flex-row.small.text-muted
+                button.status-chip(
+                  type="button",
+                  :disabled="loading",
+                  @click="refresh()",
+                  title="Refresh"
+                )
+                  i.fas.fa-sync-alt(:class="busy ? 'fa-spin' : ''")
+                span.status-chip(v-if="startDate && statusText")
+                  | {{ statusText }}
 
               .venue-group
                 .text-muted.small(v-if="!selectedGig")
@@ -994,6 +985,32 @@
 
         const visibleRows = computed(() => (loading.value ? [] : visibleGigs.value));
 
+        const busy = computed(() => loading.value || timing.value || mapping.value);
+
+        const gigsText = computed(() => {
+            if (timing.value && timesTotal.value) {
+                return `${timesLoaded.value}/${timesTotal.value} gigs`;
+            }
+            if (loading.value || !gigs.value.length) {
+                return "";
+            }
+            return `${gigs.value.length} gigs`;
+        });
+
+        const venuesText = computed(() => {
+            if (mapping.value && toMap.value) {
+                return `in ${mapped.value}/${toMap.value} venues`;
+            }
+            if (loading.value || !markerCount.value) {
+                return "";
+            }
+            return `in ${markerCount.value} venues`;
+        });
+
+        const statusText = computed(
+            () => [gigsText.value, venuesText.value].filter(Boolean).join(" "),
+        );
+
         function actsAt(venueUrl) {
             const acts = [];
             for (const gig of gigs.value) {
@@ -1220,6 +1237,8 @@
             toggleSort,
             visibleGigs,
             visibleRows,
+            busy,
+            statusText,
             calendarTitle,
             calendarCells,
             calendarWeekdays: CALENDAR_WEEKDAYS,
