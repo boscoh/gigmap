@@ -52,10 +52,41 @@
   <!-- Vue 3 -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 
-  <!-- Ky -->
+  <!-- Ky: one instance for every API call, with a shared base path and
+       error messages read from the server's JSON body. -->
   <script type="module">
       import ky from "https://unpkg.com/ky/distribution/index.js";
-      window.ky = ky;
+
+      async function readServerDetail(response) {
+          try {
+              const body = await response.clone().json();
+              if (typeof body.detail === "string") {
+                  return body.detail;
+              }
+              if (Array.isArray(body.detail)) {
+                  return body.detail.map((item) => item.msg || String(item)).join("; ");
+              }
+          } catch {
+              // The body was not JSON. Fall through to the status message.
+          }
+          return "";
+      }
+
+      window.api = ky.create({
+          prefixUrl: "/api",
+          hooks: {
+              beforeError: [
+                  async (error) => {
+                      const {response} = error;
+                      if (response) {
+                          const detail = await readServerDetail(response);
+                          error.message = detail || `server answered status ${response.status}`;
+                      }
+                      return error;
+                  },
+              ],
+          },
+      });
   </script>
 
   <!-- Leaflet: the OSM embed supports one marker only, so use a slippy map -->
@@ -786,28 +817,12 @@
         if (refresh) {
             searchParams.refresh = "true";
         }
-        if (window.ky) {
-            return await window.ky.get("/api/gigs", {searchParams, timeout: 120000}).json();
-        }
-        const query = new URLSearchParams(searchParams).toString();
-        const response = await fetch(`/api/gigs?${query}`);
-        if (!response.ok) {
-            throw new Error(`server answered status ${response.status}`);
-        }
-        return await response.json();
+        return window.api.get("gigs", {searchParams, timeout: 120000}).json();
     }
 
     async function fetchVenue(venueUrl) {
         const searchParams = {venue_url: venueUrl};
-        if (window.ky) {
-            return await window.ky.get("/api/venue", {searchParams, timeout: 60000}).json();
-        }
-        const query = new URLSearchParams(searchParams).toString();
-        const response = await fetch(`/api/venue?${query}`);
-        if (!response.ok) {
-            throw new Error(`server answered status ${response.status}`);
-        }
-        return await response.json();
+        return window.api.get("venue", {searchParams, timeout: 60000}).json();
     }
 
     function setup() {
@@ -955,7 +970,6 @@
             if (force) {
                 searchParams.refresh = "true";
             }
-            const query = new URLSearchParams(searchParams).toString();
             timeSource = new AbortController();
             timing.value = true;
             timesLoaded.value = 0;
@@ -974,9 +988,13 @@
             }
 
             try {
-                const response = await fetch(`/api/times?${query}`, {signal: timeSource.signal});
-                if (!response.ok || !response.body) {
-                    throw new Error(`server answered status ${response.status}`);
+                const response = await window.api.get("times", {
+                    searchParams,
+                    timeout: false,
+                    signal: timeSource.signal,
+                });
+                if (!response.body) {
+                    throw new Error("server sent no response body");
                 }
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
