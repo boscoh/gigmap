@@ -19,12 +19,12 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import beat, cache, sources, stores
+from gigmap import beat, sources, stores
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PACKAGE_DIR.parent
 DATA_DIR_ENV = "GIGMAP_DATA_DIR"
-CACHE_SECONDS = cache.MIN_AGE_SECONDS
+CACHE_SECONDS = stores.DAYS_CACHE_SECONDS
 def env_int(name: str, default: int) -> int:
     """Read a non-negative integer from the environment."""
     try:

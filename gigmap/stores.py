@@ -11,6 +11,10 @@ from pydantic import TypeAdapter
 
 from gigmap import cache, geocode, sources
 
+# The day files stay fresh for this time. The cleanup in server.py keeps
+# the files younger than this value. Both rules must use the same number.
+DAYS_CACHE_SECONDS = 600.0
+
 
 class CachedSource:
     """Cache the reads of one source on disk. Implement `GigSource`."""
@@ -28,7 +32,7 @@ class CachedSource:
             "days",
             TypeAdapter(list[sources.Gig]),
             filename=lambda key: f"gigmap_{key}.json",
-            max_age=cache.MIN_AGE_SECONDS,
+            max_age=DAYS_CACHE_SECONDS,
         )
         self._gigs = cache.JsonCache(data_dir, "gigs", TypeAdapter(sources.GigDetail))
         self._venues = cache.JsonCache(data_dir, "venues", TypeAdapter(sources.Venue))

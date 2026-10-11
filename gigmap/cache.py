@@ -18,9 +18,6 @@ from pydantic import TypeAdapter
 
 M = TypeVar("M")
 
-MIN_AGE_SECONDS = 600.0
-"""A younger file can be in use by a request. The cleanup keeps it."""
-
 
 def default_filename(key: str) -> str:
     """Return the file name of one key."""
