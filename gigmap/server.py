@@ -102,16 +102,6 @@ async def index() -> HTMLResponse:
     return HTMLResponse(html.replace(SOURCE_INFO_TOKEN, beat.SOURCE.model_dump_json()))
 
 
-@app.get("/api/page", response_class=HTMLResponse)
-async def gig_page(
-    source: SourceDep,
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-) -> HTMLResponse:
-    validate_dates(start_date, end_date)
-    return HTMLResponse(content=await source.page(start_date, end_date))
-
-
 async def gig_time(
     source: sources.GigSource,
     gig: sources.Gig,

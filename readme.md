@@ -294,15 +294,6 @@ lookup fails.
   `GET /api/gigs`
 - `GET /api/venue?venue_url=<beat directory url>` — returns the venue address
   and the map links
-- `GET /api/page?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` —
-  returns the raw page from the site
-
-## Why the server fetches the page
-
-`beat.com.au` sends the header `X-Frame-Options: SAMEORIGIN`. A browser blocks
-that page in an iframe from another origin. The server fetches the page
-instead. The server also adds a `<base href="https://beat.com.au/">` tag, so
-the relative links in the page work. This matters for `GET /api/page` only.
 
 ## The source
 
@@ -412,5 +403,5 @@ source, and the routes.
   breaks the address lookup.
 - The venue name alone is often not enough for the geocoder. The server tries
   the address first, then the name. Some venues still have no map.
-- The page loads its own styles and scripts from `beat.com.au`. That affects
-  `GET /api/page` only. `GET /api/gigs` reads the saved JSON.
+- The guide page loads its own styles and scripts from `beat.com.au`. The
+  parser reads only the markup, so those files do not change the data.

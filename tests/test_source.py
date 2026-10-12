@@ -3,8 +3,10 @@
 import asyncio
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from curl_cffi import requests as curl_requests
 from fastapi.testclient import TestClient
 
 from gigmap import beat, geocode, server, sources, stores
@@ -43,6 +45,12 @@ def _the_beat_source_is_a_gig_source() -> sources.GigSource:
     return beat.BeatSource()
 
 
+@pytest.fixture(autouse=True)
+def _pin_the_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the fingerprint rotation deterministic for the tests."""
+    monkeypatch.setattr(beat, "_current_target", beat.IMPERSONATE_TARGETS[0])
+
+
 @pytest.fixture
 def client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -63,19 +71,6 @@ def test_url_key_uses_the_last_path_segment() -> None:
     assert sources.url_key("https://beat.com.au/directory/venue/") == "venue"
     assert sources.url_key("https://beat.com.au/act") == "act"
     assert sources.url_key("https://beat.com.au/") == "page"
-
-
-def test_page_route_uses_the_source(client: tuple[TestClient, FakeSource]) -> None:
-    http, fake = client
-
-    response = http.get(
-        "/api/page",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
-
-    assert response.status_code == 200
-    assert response.text == "<html>page</html>"
-    assert fake.calls == [("page", "2026-10-01", "2026-10-02")]
 
 
 def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -> None:
@@ -246,3 +241,106 @@ def test_a_venue_without_coordinates_is_not_cached(
     asyncio.run(run())
 
     assert fake.calls.count(("venue", "https://beat.com.au/directory/venue/")) == 2
+
+
+class _FakeResponse:
+    """A curl_cffi response with the fields the source reads."""
+
+    def __init__(
+        self, status_code: int, text: str = "", mitigated: str | None = None
+    ) -> None:
+        self.status_code = status_code
+        self.text = text
+        self.headers = {"cf-mitigated": mitigated} if mitigated else {}
+
+
+class _FakeSession:
+    """A curl_cffi session that answers from a saved table."""
+
+    def __init__(self, responses: dict[str, _FakeResponse]) -> None:
+        self.responses = responses
+        self.targets: list[str] = []
+
+    async def get(
+        self,
+        url: str,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        impersonate: str = "",
+    ) -> _FakeResponse:
+        self.targets.append(impersonate)
+        return self.responses[impersonate]
+
+
+def _fake_source(responses: dict[str, _FakeResponse]) -> beat.BeatSource:
+    source = beat.BeatSource()
+    source._session = cast(Any, _FakeSession(responses))
+    return source
+
+
+def test_the_beat_source_returns_the_page_text() -> None:
+    source = _fake_source({"chrome": _FakeResponse(200, "<html>ok</html>")})
+
+    assert asyncio.run(source._html(beat.BEAT_URL)) == "<html>ok</html>"
+
+
+def test_the_beat_source_retries_a_challenge_with_another_fingerprint() -> None:
+    source = _fake_source(
+        {
+            "chrome": _FakeResponse(403, mitigated="challenge"),
+            "safari_ios": _FakeResponse(200, "<html>ok</html>"),
+        }
+    )
+
+    assert asyncio.run(source._html(beat.BEAT_URL)) == "<html>ok</html>"
+    assert cast(Any, source._session).targets == ["chrome", "safari_ios"]
+
+
+def test_the_beat_source_does_not_retry_a_plain_error() -> None:
+    source = _fake_source({"chrome": _FakeResponse(404)})
+
+    with pytest.raises(sources.SourceError, match="answered status 404"):
+        asyncio.run(source._html(beat.BEAT_URL))
+
+    assert cast(Any, source._session).targets == ["chrome"]
+
+
+def test_the_beat_source_reports_a_challenge_after_every_target() -> None:
+    responses = {
+        target: _FakeResponse(403, mitigated="challenge")
+        for target in beat.IMPERSONATE_TARGETS
+    }
+    source = _fake_source(responses)
+
+    with pytest.raises(sources.SourceError, match="answered status 403"):
+        asyncio.run(source._html(beat.BEAT_URL))
+
+    assert cast(Any, source._session).targets == list(beat.IMPERSONATE_TARGETS)
+
+
+def test_the_beat_source_wraps_a_connection_error() -> None:
+    class Failing:
+        async def get(self, *args: object, **kwargs: object) -> object:
+            raise curl_requests.RequestsError("boom")
+
+    source = beat.BeatSource()
+    source._session = cast(Any, Failing())
+
+    with pytest.raises(sources.SourceError, match="cannot reach beat.com.au"):
+        asyncio.run(source._html(beat.BEAT_URL))
+
+
+def test_target_order_starts_at_the_given_target() -> None:
+    assert beat.target_order("safari_ios") == ("safari_ios", "firefox", "chrome")
+
+
+def test_the_beat_source_keeps_the_target_that_passed() -> None:
+    source = _fake_source(
+        {
+            "chrome": _FakeResponse(403, mitigated="challenge"),
+            "safari_ios": _FakeResponse(200, "<html>ok</html>"),
+        }
+    )
+
+    assert asyncio.run(source._html(beat.BEAT_URL)) == "<html>ok</html>"
+    assert beat._current_target == "safari_ios"

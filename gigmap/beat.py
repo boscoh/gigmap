@@ -1,21 +1,21 @@
 """Read the beat.com.au gig guide.
 
-This module holds every rule about the site: the URLs, the user agent, the
+This module holds every rule about the site: the URLs, the browser client,
 page markup selectors, the date and time formats, and the reads. It is the
 only module that reads beat.com.au. The server holds the cache and the HTTP
 routes.
 """
 
+import random
 import re
 from datetime import datetime
 
-import httpx
 from bs4 import BeautifulSoup, Tag
+from curl_cffi import requests as curl_requests
 
 from gigmap import sources
 
 BEAT_URL = "https://beat.com.au/gig-guide/"
-BEAT_ORIGIN = "https://beat.com.au/"
 
 # The app serves this one site, so the source carries the app details.
 SOURCE = sources.SourceInfo(
@@ -26,8 +26,6 @@ SOURCE = sources.SourceInfo(
 
 VENUE_URL_HINT = "venue_url must have the form https://beat.com.au/directory/<name>/"
 
-HEAD_RE = re.compile(r"<head[^>]*>", re.IGNORECASE)
-BASE_RE = re.compile(r"<base\b", re.IGNORECASE)
 SPACE_RE = re.compile(r"\s+")
 VENUE_URL_RE = re.compile(r"https://beat\.com\.au/directory/(?P<slug>[a-z0-9-]+)/?")
 DETAIL_URL_RE = re.compile(
@@ -39,24 +37,27 @@ GIG_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 
-# beat.com.au (Cloudflare) answers a browser user agent.
+# beat.com.au (Cloudflare) reads the TLS fingerprint. curl_cffi
+# impersonates the browser, so the client does not send a user agent.
+# A challenge can answer one fingerprint and pass another. A read then
+# moves to the next target and keeps it for the later reads.
+IMPERSONATE_TARGETS = ("chrome", "safari_ios", "firefox")
+
+# A real browser sends one fingerprint, so the target does not change
+# for each read. It changes only when the process starts or when a
+# challenge rejects the current target.
+_current_target = random.choice(IMPERSONATE_TARGETS)
+
+
+def target_order(start: str) -> tuple[str, ...]:
+    """Return every target, with `start` first."""
+    index = IMPERSONATE_TARGETS.index(start)
+    return IMPERSONATE_TARGETS[index:] + IMPERSONATE_TARGETS[:index]
+
+
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-    ),
     "Accept-Language": "en-AU,en;q=0.9",
 }
-
-
-def rewrite_for_frame(html: str) -> str:
-    """Add a base tag, so the relative links work in the page."""
-    if BASE_RE.search(html):
-        return html
-    base_tag = f'<base href="{BEAT_ORIGIN}">'
-    if not HEAD_RE.search(html):
-        return base_tag + html
-    return HEAD_RE.sub(lambda match: match.group(0) + base_tag, html, count=1)
 
 
 def parse_site_date(text: str | None) -> str | None:
@@ -164,30 +165,46 @@ class BeatSource:
     """
 
     def __init__(self) -> None:
-        self._client: httpx.AsyncClient | None = None
+        self._session: curl_requests.AsyncSession | None = None
 
     async def __aenter__(self) -> "BeatSource":
-        self._client = httpx.AsyncClient(follow_redirects=True, timeout=30.0)
+        self._session = curl_requests.AsyncSession(
+            impersonate=_current_target,
+            allow_redirects=True,
+            timeout=30.0,
+        )
         return self
 
     async def __aexit__(self, *_args: object) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        session = self._session
+        self._session = None
+        if session is not None:
+            await session.close()
 
     async def _html(self, url: str, params: dict[str, str] | None = None) -> str:
-        client = self._client
-        if client is None:
+        global _current_target
+        session = self._session
+        if session is None:
             raise RuntimeError("use BeatSource as an async context manager")
-        try:
-            response = await client.get(url, params=params, headers=HEADERS)
-        except httpx.HTTPError as error:
-            raise sources.SourceError(f"cannot reach beat.com.au: {error}") from error
-        if response.status_code != 200:
-            raise sources.SourceError(
-                f"beat.com.au answered status {response.status_code}"
-            )
-        return response.text
+        status = 0
+        for target in target_order(_current_target):
+            try:
+                response = await session.get(
+                    url, params=params, headers=HEADERS, impersonate=target
+                )
+            except curl_requests.RequestsError as error:
+                raise sources.SourceError(
+                    f"cannot reach beat.com.au: {error}"
+                ) from error
+            if response.status_code == 200:
+                # Keep the target that passed, so the later reads start there.
+                _current_target = target
+                return response.text
+            status = response.status_code
+            # A missing challenge header means a normal HTTP error. Stop.
+            if response.headers.get("cf-mitigated") is None:
+                break
+        raise sources.SourceError(f"beat.com.au answered status {status}")
 
     async def page(self, start_date: str, end_date: str) -> str:
         """Return the gig guide page of a date range."""
@@ -200,7 +217,7 @@ class BeatSource:
             "start_date": start_date,
             "end_date": end_date,
         }
-        return rewrite_for_frame(await self._html(BEAT_URL, params=params))
+        return await self._html(BEAT_URL, params=params)
 
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the gigs of a date range."""
