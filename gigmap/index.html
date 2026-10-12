@@ -850,6 +850,7 @@
             isNarrow.value = event.matches;
         });
         let mapRun = 0;
+        let loadRun = 0;
         const activeVenueUrl = ref("");
         const venueInfo = new Map();
         let venueRequest = 0;
@@ -893,7 +894,10 @@
         }
 
         function pickDay(iso) {
-            load({id: `date-${iso}`, start: iso, end: iso});
+            const range = RANGES.find(
+                (item) => (item.start || isoDate(item.from)) === iso,
+            );
+            load(range || {id: `date-${iso}`, start: iso, end: iso});
         }
 
         const calendarTitle = computed(() =>
@@ -919,6 +923,8 @@
         });
 
         async function load(range, force = false) {
+            loadRun += 1;
+            const runId = loadRun;
             active.value = range.id;
             currentRange.value = range;
             startDate.value = range.start || isoDate(range.from);
@@ -942,14 +948,23 @@
             stopTimes();
             scrollRoom(0);
             try {
-                gigs.value = await fetchGigs(startDate.value, endDate.value, force);
+                const data = await fetchGigs(startDate.value, endDate.value, force);
+                if (runId !== loadRun) {
+                    return;
+                }
+                gigs.value = data;
                 mapAllVenues();
                 loadTimes(force);
             } catch (problem) {
+                if (runId !== loadRun) {
+                    return;
+                }
                 gigs.value = [];
                 error.value = `Could not load the gig guide: ${problem.message}`;
             } finally {
-                loading.value = false;
+                if (runId === loadRun) {
+                    loading.value = false;
+                }
             }
         }
 
