@@ -325,9 +325,10 @@ class GigSource(Protocol):
 answers `502`. `sources.SourceUrlError` means that the source rejects the
 url. The server answers `400`.
 
-`stores.py` declares `CachedSource`. This class implements `GigSource` and
-wraps another source with the disk stores. It builds the three stores from
-the data directory, so the caller passes only the source and the directory.
+`stores.py` declares `DataStores` and `CachedSource`. `DataStores` builds the
+three stores from the data directory and holds the cleanup of that directory.
+`CachedSource` implements `GigSource` and wraps another source with those
+stores.
 
 The FastAPI dependency `source_dependency` gives one source for each
 request, then closes it. The dependency builds `CachedSource` around
@@ -359,7 +360,7 @@ is returned but not stored.
 | `GIGS` | `data/gigs/` | never stale | older than `GIG_TTL_DAYS` |
 | `VENUES` | `data/venues/` | only with the coordinates | never |
 
-`stores.CachedSource` reads and writes all three stores. The `venue` method
+`stores.CachedSource` reads and writes the three `DataStores` stores. The
 calls `geocode.enrich_venue`, so the value holds the geocode and the map
 links, and the `VENUES` entry has the `valid` rule, so the wrapper stores
 the venue only when it has the coordinates. The `/api/venue` route is then
@@ -386,7 +387,8 @@ source, and the routes.
 - `gigmap/index.html` — one page Vue 3 application. Vue, Bootstrap, Pug,
   Lodash, and Ky come from CDN. The layout comes from `~/p/onepageapp`.
 - `gigmap/server.py` — the FastAPI server, the HTTP routes, and the cleanup
-- `gigmap/stores.py` — the three cache kinds and `CachedSource`
+- `gigmap/stores.py` — `DataStores` (the three cache kinds and the cleanup) and
+  `CachedSource`
 - `gigmap/cache.py` — the reusable JSON disk cache and the retention rules
 - `gigmap/geocode.py` — the Nominatim lookup and the map links
 - `gigmap/sources.py` — the `GigSource` protocol, the data classes, and the errors
