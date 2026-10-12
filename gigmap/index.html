@@ -515,20 +515,33 @@
               | ${SOURCE.title}
           .gig-head.text-muted(v-if="!isNarrow")
             | Data @
-            a.me-2(
+            a.ms-1.me-2(
                 href="${SOURCE.home_url}",
                 target="_blank",
                 rel="noopener",
                 title="Search beat.com.au"
             ) ${SOURCE.name}
+            a(
+                href="https://github.com/boscoh/gigmap",
+                target="_blank",
+                rel="noopener",
+                title="Open the gigmap source on GitHub"
+            ) GitHub
           .d-flex.gap-3.mt-3.align-items-start
             .summary.flex-grow-1.overflow-hidden
               template(v-if="isNarrow")
                 h1.mb-0.text-nowrap
                   | ${SOURCE.title}
                 .text-muted
-                  | Data @
-                  a.me-2(
+                  a(
+                      href="https://github.com/boscoh/gigmap",
+                      target="_blank",
+                      rel="noopener",
+                      title="Open the gigmap source on GitHub"
+                  ) gitHub
+                  =", "
+                  | data
+                  a.ms-1.me-2(
                       href="${SOURCE.home_url}",
                       target="_blank",
                       rel="noopener",
@@ -592,13 +605,13 @@
 
           .text-muted.mt-3
             | Coordinates ©
-            a(
+            a.ms-1(
               href="https://www.openstreetmap.org/copyright",
               target="_blank",
               rel="noopener"
             ) OpenStreetMap contributors
             | , via
-            a(
+            a.ms-1(
               href="https://nominatim.openstreetmap.org/",
               target="_blank",
               rel="noopener"
