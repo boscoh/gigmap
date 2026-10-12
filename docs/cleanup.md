@@ -26,7 +26,7 @@ The day rule uses the date in the file name. A file with an unknown name stays.
 
 ## The safety rules
 
-1. Keep each file younger than `CACHE_SECONDS` (600 seconds). A request can hold
+1. Keep each file younger than `DAYS_CACHE_SECONDS` (3 hours). A request can hold
    the file.
 2. Match the name pattern only.
 3. Do not remove a directory.
@@ -54,7 +54,7 @@ uv run gigmap clean --quiet        # print nothing
 
 ```text
 removed 12 day files and 40 gig files, 1.1 MB
-kept 3 files younger than 600 seconds
+kept 3 files younger than 10800 seconds
 ```
 
 With `--dry-run`, the first words are `would remove`.
@@ -85,12 +85,12 @@ cron is the alternative. It runs while the app is stopped:
 today = date of now
 for path in data/days/gigmap_*.json:
     end = the date from the file name
-    if end < today and age(path) >= 600:
+    if end < today and age(path) >= DAYS_CACHE_SECONDS:
         remove(path)
 
 cutoff = now - gig_days * 86400
 for path in data/gigs/*.json:
-    if mtime(path) < cutoff and age(path) >= 600:
+    if mtime(path) < cutoff and age(path) >= DAYS_CACHE_SECONDS:
         remove(path)
 
 # data/venues/*.json is never touched

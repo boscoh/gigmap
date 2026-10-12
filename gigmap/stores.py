@@ -18,7 +18,7 @@ from gigmap import cache, geocode, sources
 
 # The day files stay fresh for this time. The cleanup keeps the files
 # younger than this value, so both rules must use the same number.
-DAYS_CACHE_SECONDS = 600.0
+DAYS_CACHE_SECONDS = 3 * 3600
 
 DAYS_SUBDIR = "days"
 GIGS_SUBDIR = "gigs"

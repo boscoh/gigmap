@@ -176,7 +176,7 @@ data/gigs/stella-lefty.json
 ```
 
 The server uses the saved JSON for a date range when the file is
-younger than 600 seconds. Then a second click is fast. After 600 seconds the
+younger than 3 hours. Then a second click is fast. After 3 hours the
 server fetches the page again.
 
 A venue file is the persistent store of the venue name, the address, and the
@@ -356,7 +356,7 @@ is returned but not stored.
 
 | Cache | Directory | Freshness | Cleanup |
 | --- | --- | --- | --- |
-| `DAYS` | `data/days/` | 600 seconds | a date range before today |
+| `DAYS` | `data/days/` | 3 hours | a date range before today |
 | `GIGS` | `data/gigs/` | never stale | older than `GIG_TTL_DAYS` |
 | `VENUES` | `data/venues/` | only with the coordinates | never |
 
