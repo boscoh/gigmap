@@ -188,8 +188,9 @@ A gig file is the persistent store of the start time. The server reads the time
 from the gig detail page one time and uses the stored value after that. The
 server uses a small pool of connections for the first load of a date range.
 
-The Refresh button adds `refresh=true`. This parameter ignores the saved range
-JSON and the saved gig time files.
+The `refresh=true` query parameter ignores the saved range JSON and the saved
+gig time files. The page does not send this parameter. A client can add it to
+the request.
 
 Set the directory with the `--data-dir` option or with the environment variable
 `GIGMAP_DATA_DIR`.

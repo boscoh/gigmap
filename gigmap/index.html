@@ -174,33 +174,6 @@
           white-space: normal;
       }
 
-      .status-chip {
-          align-items: center;
-          background: none;
-          border: 0;
-          border-radius: 0.25rem;
-          color: var(--bs-secondary);
-          display: inline-flex;
-          font-size: 0.75rem;
-          gap: 0.35rem;
-          line-height: 1.5;
-          padding: 0.2rem 0.4rem;
-      }
-
-      button.status-chip {
-          cursor: pointer;
-      }
-
-      button.status-chip:hover:not(:disabled) {
-          background: #e9ecef;
-          color: #212529;
-      }
-
-      button.status-chip:disabled {
-          cursor: default;
-          opacity: 1;
-      }
-
       .splitter {
           display: flex;
           flex: 0 0 0.75rem;
@@ -541,7 +514,7 @@
             h1.mb-0
               | ${SOURCE.title}
           .gig-head.text-muted(v-if="!isNarrow")
-            | Data @ 
+            | Data @
             a.me-2(
                 href="${SOURCE.home_url}",
                 target="_blank",
@@ -554,7 +527,7 @@
                 h1.mb-0.text-nowrap
                   | ${SOURCE.title}
                 .text-muted
-                  | Data @ 
+                  | Data @
                   a.me-2(
                       href="${SOURCE.home_url}",
                       target="_blank",
@@ -574,14 +547,8 @@
               .mt-1
 
               .d-flex.flex-row.small.text-muted
-                button.status-chip(
-                  type="button",
-                  :disabled="loading",
-                  @click="refresh()",
-                  title="Refresh"
-                )
-                  i.fas.fa-sync-alt(:class="busy ? 'fa-spin' : ''")
-                span.status-chip(v-if="startDate && statusText")
+                div(v-if="busy || statusText")
+                  i.fas.fa-spinner.fa-spin.me-2(v-if="busy")
                   | {{ statusText }}
 
               .venue-group
@@ -624,13 +591,13 @@
                   | {{ cell ? cell.day : "" }}
 
           .text-muted.mt-3
-            | Coordinates © 
+            | Coordinates ©
             a(
               href="https://www.openstreetmap.org/copyright",
               target="_blank",
               rel="noopener"
             ) OpenStreetMap contributors
-            | , via 
+            | , via
             a(
               href="https://nominatim.openstreetmap.org/",
               target="_blank",
@@ -830,11 +797,8 @@
         return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     }
 
-    async function fetchGigs(startDate, endDate, refresh) {
+    async function fetchGigs(startDate, endDate) {
         const searchParams = {start_date: startDate, end_date: endDate};
-        if (refresh) {
-            searchParams.refresh = "true";
-        }
         return window.api.get("gigs", {searchParams, timeout: 120000}).json();
     }
 
@@ -851,7 +815,6 @@
         const gigs = ref([]);
         const loading = ref(false);
         const error = ref("");
-        const currentRange = ref(null);
         const selectedGig = ref(null);
         const venue = ref({loading: false, data: null, error: ""});
         const mapping = ref(false);
@@ -941,11 +904,10 @@
             return cells;
         });
 
-        async function load(range, force = false) {
+        async function load(range) {
             loadRun += 1;
             const runId = loadRun;
             active.value = range.id;
-            currentRange.value = range;
             startDate.value = range.start || isoDate(range.from);
             endDate.value = range.end || isoDate(range.to);
             loading.value = true;
@@ -967,13 +929,13 @@
             stopTimes();
             scrollRoom(0);
             try {
-                const data = await fetchGigs(startDate.value, endDate.value, force);
+                const data = await fetchGigs(startDate.value, endDate.value);
                 if (runId !== loadRun) {
                     return;
                 }
                 gigs.value = data;
                 mapAllVenues();
-                loadTimes(force);
+                loadTimes();
             } catch (problem) {
                 if (runId !== loadRun) {
                     return;
@@ -996,13 +958,10 @@
             timing.value = false;
         }
 
-        async function loadTimes(force = false) {
+        async function loadTimes() {
             stopTimes();
             const runId = timeRun;
             const searchParams = {start_date: startDate.value, end_date: endDate.value};
-            if (force) {
-                searchParams.refresh = "true";
-            }
             timeSource = new AbortController();
             timing.value = true;
             timesLoaded.value = 0;
@@ -1444,12 +1403,6 @@
             }
         }
 
-        function refresh() {
-            if (currentRange.value) {
-                load(currentRange.value, true);
-            }
-        }
-
         onMounted(() => {
             map = L.map("map").setView(MELBOURNE, 11);
             L.tileLayer(TILE_URL, {
@@ -1472,7 +1425,6 @@
             loading,
             error,
             load,
-            refresh,
             selectedGig,
             venue,
             selectGig,
@@ -1506,9 +1458,9 @@
             shiftMonth,
             pickDay
         };
-    
+
     }
-    
+
     document.addEventListener("DOMContentLoaded", () => {
         createApp({template, setup}).mount("#app");
     });
