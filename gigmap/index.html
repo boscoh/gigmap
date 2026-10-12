@@ -55,31 +55,30 @@
   <!-- Ky: one instance for every API call, with a shared base path and
        error messages read from the server's JSON body. -->
   <script type="module">
-      import ky from "https://unpkg.com/ky/distribution/index.js";
+      import ky from "https://unpkg.com/ky@2.2.0/distribution/index.js";
 
-      async function readServerDetail(response) {
-          try {
-              const body = await response.clone().json();
-              if (typeof body.detail === "string") {
-                  return body.detail;
-              }
-              if (Array.isArray(body.detail)) {
-                  return body.detail.map((item) => item.msg || String(item)).join("; ");
-              }
-          } catch {
-              // The body was not JSON. Fall through to the status message.
+      // The server sends FastAPI errors as JSON. `detail` is a string or a
+      // list of objects with a `msg` field. ky v2 reads the body into
+      // `error.data` before the hook runs, so the response body is gone.
+      function readServerDetail(error) {
+          const detail = error?.data?.detail;
+          if (typeof detail === "string") {
+              return detail;
+          }
+          if (Array.isArray(detail)) {
+              return detail.map((item) => item.msg || String(item)).join("; ");
           }
           return "";
       }
 
       window.api = ky.create({
-          prefixUrl: "/api",
+          prefix: "/api",
           hooks: {
               beforeError: [
-                  async (error) => {
+                  async ({error}) => {
                       const {response} = error;
                       if (response) {
-                          const detail = await readServerDetail(response);
+                          const detail = readServerDetail(error);
                           error.message = detail || `server answered status ${response.status}`;
                       }
                       return error;
