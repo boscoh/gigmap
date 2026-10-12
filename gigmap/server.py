@@ -62,7 +62,7 @@ async def source_dependency(
 ) -> AsyncIterator[sources.GigSource]:
     """Give one cached source for the request, then close it."""
     async with beat.BeatSource() as site:
-        yield stores.CachedSource(site, data_dir, refresh)
+        yield stores.CachedSource(site, stores.DataStores(data_dir), refresh)
 
 
 SourceDep = Annotated[sources.GigSource, Depends(source_dependency)]
@@ -231,7 +231,7 @@ def run_cleanup(
     quiet: bool = False,
 ) -> stores.CleanReport:
     """Remove the old data files and print the result."""
-    report = stores.clean_data(data_dir(), time.time(), gig_days, dry_run)
+    report = stores.DataStores(data_dir).clean(time.time(), gig_days, dry_run)
     if quiet:
         return report
     verb = "would remove" if dry_run else "removed"

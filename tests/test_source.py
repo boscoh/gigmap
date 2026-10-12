@@ -49,7 +49,9 @@ def client(
 ) -> Iterator[tuple[TestClient, FakeSource]]:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
     fake = FakeSource()
-    source: sources.GigSource = stores.CachedSource(fake, server.data_dir)
+    source: sources.GigSource = stores.CachedSource(
+        fake, stores.DataStores(server.data_dir)
+    )
     server.app.dependency_overrides[server.source_dependency] = lambda: source
     try:
         yield TestClient(server.app), fake
@@ -169,7 +171,7 @@ def test_the_wrapper_caches_the_gig_reads(
 ) -> None:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
     fake = FakeSource()
-    source = stores.CachedSource(fake, server.data_dir)
+    source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
 
     async def run() -> None:
         first = await source.gigs("2026-10-01", "2026-10-02")
@@ -191,7 +193,7 @@ def test_the_wrapper_refetches_on_refresh(
 ) -> None:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
     fake = FakeSource()
-    source = stores.CachedSource(fake, server.data_dir, refresh=True)
+    source = stores.CachedSource(fake, stores.DataStores(server.data_dir), refresh=True)
 
     async def run() -> None:
         await source.gigs("2026-10-01", "2026-10-02")
@@ -207,7 +209,7 @@ def test_the_venue_is_cached_only_with_coordinates(
 ) -> None:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
     fake = FakeSource()
-    source = stores.CachedSource(fake, server.data_dir)
+    source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
 
     async def found(name: str | None, address: str | None) -> dict:
         return {"latitude": -37.8, "longitude": 144.9, "display_name": "Here"}
@@ -230,7 +232,7 @@ def test_a_venue_without_coordinates_is_not_cached(
 ) -> None:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
     fake = FakeSource()
-    source = stores.CachedSource(fake, server.data_dir)
+    source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
 
     async def missing(name: str | None, address: str | None) -> None:
         return None
