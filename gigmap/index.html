@@ -116,6 +116,11 @@
           }
       }
 
+      /* Muted text is small. Keep Bootstrap .small on muted elements. */
+      .text-muted:not(.small) {
+          font-size: 0.7rem;
+      }
+
       .app-shell {
           height: 100vh;
       }
@@ -407,6 +412,11 @@
           white-space: nowrap;
       }
 
+      .artist-icons i,
+      .venue-icons i {
+          font-size: 0.8rem;
+      }
+
       @media (min-width: 992px) {
           .gig-side {
               flex: 0 0 var(--side-width, 50%);
@@ -485,6 +495,15 @@
               padding-left: 0.75rem;
           }
 
+          .gig-table {
+              font-size: 0.85rem;
+          }
+
+          .gig-table .btn {
+              font-size: 0.75rem;
+              padding: 0.1rem 0.4rem;
+          }
+
           h1 {
               font-size: 1.5rem;
               -webkit-text-stroke-width: 1.25px;
@@ -521,7 +540,7 @@
           .gig-head.d-flex.align-items-center(v-if="!isNarrow")
             h1.mb-0
               | ${SOURCE.title}
-          .gig-head.text-muted(v-if="!isNarrow", style="font-size: 0.7rem")
+          .gig-head.text-muted(v-if="!isNarrow")
             | Data @ 
             a.me-2(
                 href="${SOURCE.home_url}",
@@ -534,7 +553,7 @@
               template(v-if="isNarrow")
                 h1.mb-0.text-nowrap
                   | ${SOURCE.title}
-                .text-muted(style="font-size: 0.7rem")
+                .text-muted
                   | Data @ 
                   a.me-2(
                       href="${SOURCE.home_url}",
@@ -604,7 +623,7 @@
                 )
                   | {{ cell ? cell.day : "" }}
 
-          .text-muted.mt-3(style="font-size: 0.7rem")
+          .text-muted.mt-3
             | Coordinates © 
             a(
               href="https://www.openstreetmap.org/copyright",
@@ -669,9 +688,9 @@
                   td
                     div(v-if="gig.time")
                       | {{ gig.time }}
-                    div.text-muted(style="font-size: 0.7rem")
+                    div.text-muted
                       | {{ formatDate(gig.date) }}
-                    div.text-muted(style="font-size: 0.7rem", v-if="gig.end_date")
+                    div.text-muted(v-if="gig.end_date")
                       | → {{ formatDate(gig.end_date) }}
                   td
                     .artist-line
@@ -685,7 +704,7 @@
                           rel="noopener",
                           title="Open this gig on beat.com.au"
                         )
-                          i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                          i.fas.fa-link.text-muted
                         a.ms-2(
                           v-if="gig.artist",
                           :href="searchUrl(gig)",
@@ -693,8 +712,8 @@
                           rel="noopener",
                           title="Search the web for this artist"
                         )
-                          i.fas.fa-search.text-muted(style="font-size: 0.8rem")
-                    div.text-muted(style="font-size: 0.7rem")
+                          i.fas.fa-search.text-muted
+                    div.text-muted
                       | {{ tagLine(gig) }}
                   td.venue-col(v-if="!isNarrow")
                     .venue-line
@@ -708,7 +727,7 @@
                           rel="noopener",
                           title="Open the venue page on beat.com.au"
                         )
-                          i.fas.fa-link.text-muted(style="font-size: 0.8rem")
+                          i.fas.fa-link.text-muted
                   td
                     a.btn.btn-sm.btn-outline-primary(
                       v-if="gig.ticket_url",
