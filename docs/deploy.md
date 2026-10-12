@@ -17,8 +17,9 @@ commands, the cleanup loop, and the cron alternative.
 | app name | gigmap |
 | app type | uv |
 | internal port | 8000 |
-| external port | 8080 |
-| url | `http://209.38.23.184:8080` |
+| external port | 443 |
+| domain | gigmap.dev |
+| url | `https://gigmap.dev` |
 
 The droplet also runs `tspots` (npm, internal port 3000,
 `https://tangiblespots.com`).
@@ -87,38 +88,46 @@ deployvm uv sync tspots /Users/boscoh/p/gigmap \
 
 ## Step A — the domain and SSL
 
-1. Add two A records in the DigitalOcean zone for `tangiblespots.com`:
+The app answers on `https://gigmap.dev`. The name is registered at Porkbun.
+See `docs/domain.md` for the name record.
 
-   | Name | Type | Value |
-   | --- | --- | --- |
-   | `gig` | A | `209.38.23.184` |
-   | `www.gig` | A | `209.38.23.184` |
+`docs/domain.md` holds the record, and the list of tool gaps, fixed and open.
 
-   Both are necessary. certbot validates `gig.tangiblespots.com` and
-   `www.gig.tangiblespots.com`. Add the records before the deploy. Without
-   them, deployvm tries to create a new zone for the subdomain.
-
-2. Run the deploy again with the domain:
+1. Register the name, and set the DigitalOcean nameservers at the registrar.
+   Run the commands from `/Users/boscoh/p/nimago`, so that `--instance` finds
+   the instance file:
 
 ```bash
-cd /Users/boscoh/p/nimago
-deployvm uv deploy tspots /Users/boscoh/p/gigmap \
-  "uv run --no-sync gigmap serve --host 0.0.0.0 --port 8000" \
-  --app-name gigmap \
-  --port 8000 \
-  --domain gig.tangiblespots.com \
-  --email apposite@gmail.com
+rdomain register gigmap.dev
+deployvm nameservers gigmap.dev --instance tspots | rdomain nameservers gigmap.dev
 ```
 
-deployvm removes every `sites-enabled` file with `server_name _`, so the port
-8080 config from Step B goes away. The app then answers on
-`https://gig.tangiblespots.com`.
-
-Close the port later:
+2. Create the DigitalOcean zone with the A records for `@` and `www`:
 
 ```bash
-ssh deploy@209.38.23.184 'sudo ufw delete allow 8080/tcp'
+deployvm dns gigmap.dev --target tspots
 ```
+
+3. Wait for the registrar nameserver change, then check the answer:
+
+```bash
+dig +short NS gigmap.dev
+dig +short A gigmap.dev
+```
+
+4. Deploy again with the domain:
+
+```bash
+./deploy.sh --ssl
+```
+
+`deployvm` writes `/etc/nginx/sites-available/gigmap.dev` and runs certbot
+for `gigmap.dev` and `www.gigmap.dev`. The certificate holds both names. The
+app then answers on `https://gigmap.dev`.
+
+The deploy removes the old IP-only site `/etc/nginx/sites-available/gigmap`
+and closes port 8080 in UFW. The next section records the state after the
+switch.
 
 ## Cleanup each day
 
@@ -187,3 +196,22 @@ Date: 2026-10-10, 08:42 local time, 21:42 UTC.
 | `https://tangiblespots.com` | 200. tspots is not affected |
 | pm2 | `tspots` online |
 | UFW | 8080/tcp allowed. 80 and 443 unchanged |
+
+## The state after the domain switch
+
+Date: 2026-10-12, 17:22 local time, 06:22 UTC.
+
+| Check | Result |
+| --- | --- |
+| `https://gigmap.dev/` | 200 |
+| `https://www.gigmap.dev/` | 200 |
+| `http://gigmap.dev/` | 301 to `https://gigmap.dev/` |
+| `GET /api/gigs` with a date range | 200, JSON list |
+| certificate | `gigmap.dev` and `www.gigmap.dev`, expires 2027-01-10 |
+| `dig +short A gigmap.dev` at 8.8.8.8 | `209.38.23.184` |
+| `https://tangiblespots.com` | 200. tspots is not affected |
+| `supervisorctl status` | `gigmap RUNNING` |
+| nginx | `gigmap.dev`, `ip-access`, and `tangiblespots.com` are enabled |
+
+The port-8080 config `/etc/nginx/sites-available/gigmap` stays enabled. UFW
+still allows 8080/tcp.

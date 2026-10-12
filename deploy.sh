@@ -17,7 +17,7 @@ INSTANCE="tspots"
 APP_NAME="gigmap"
 PORT=8000
 OUTGOING_PORT=8080
-DOMAIN="gig.tangiblespots.com"
+DOMAIN="gigmap.dev"
 EMAIL="apposite@gmail.com"
 COMMAND="TZ=Australia/Melbourne uv run --no-sync gigmap serve --host 0.0.0.0 --port 8000"
 

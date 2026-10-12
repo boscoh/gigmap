@@ -223,8 +223,7 @@ The full specification is in `docs/cleanup.md`.
 
 ## Deploy
 
-The app runs on the tspots instance on DigitalOcean, at
-`http://209.38.23.184:8080`.
+The app runs on the tspots instance on DigitalOcean, at `https://gigmap.dev`.
 
 ```bash
 ./deploy.sh           # deploy to the port
