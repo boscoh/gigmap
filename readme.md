@@ -333,7 +333,7 @@ server.app.dependency_overrides[server.source_dependency] = lambda: fake
 
 ## The cache
 
-`cache.py` holds the reusable disk cache. `CacheEntry` describes one cache
+`stores.py` holds the reusable disk cache. `CacheEntry` describes one cache
 kind as data: the subdirectory, the value type, the file name, the
 freshness rule, the validity rule, and the retention rule.
 `JsonCache` does the shared work: it builds the path, validates on read,
@@ -343,7 +343,7 @@ writes through a temporary file, and evicts the old files.
 and store the result when it is valid. A value that fails the validity rule
 is returned but not stored.
 
-`stores.py` declares one `CacheEntry` for each data kind:
+`DataStores` builds one `JsonCache` for each data kind:
 
 | Cache | Directory | Freshness | Cleanup |
 | --- | --- | --- | --- |
@@ -378,9 +378,8 @@ source, and the routes.
 - `gigmap/index.html` — one page Vue 3 application. Vue, Bootstrap, Pug,
   Lodash, and Ky come from CDN. The layout comes from `~/p/onepageapp`.
 - `gigmap/server.py` — the FastAPI server, the HTTP routes, and the cleanup
-- `gigmap/stores.py` — `DataStores` (the three cache kinds and the cleanup) and
-  `CachedSource`
-- `gigmap/cache.py` — the reusable JSON disk cache and the retention rules
+- `gigmap/stores.py` — `JsonCache` (the reusable JSON disk cache), `DataStores`
+  (the three cache kinds and the cleanup), and `CachedSource`
 - `gigmap/geocode.py` — the Nominatim lookup and the map links
 - `gigmap/sources.py` — the `GigSource` protocol, the data classes, and the errors
 - `gigmap/beat.py` — the beat.com.au rules: the URLs, the parsers, and `BeatSource`
