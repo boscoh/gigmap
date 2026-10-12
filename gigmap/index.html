@@ -174,6 +174,21 @@
           white-space: normal;
       }
 
+      /* The narrow layout puts the venue between the map and the table, so
+         the venue stays beside the rows that it belongs to. The text is at
+         least the size of the table text. */
+      .venue-bar {
+          display: flex;
+          flex-direction: column;
+          padding-top: 0.5rem;
+          font-size: 0.85rem;
+      }
+
+      .venue-bar .small,
+      .venue-bar .text-muted {
+          font-size: 0.85rem;
+      }
+
       .splitter {
           display: flex;
           flex: 0 0 0.75rem;
@@ -421,12 +436,9 @@
               height: calc(22rem - 50px);
           }
 
+          /* The narrow layout stacks the map, the venue bar, and the table,
+             so the drag handle has no work. */
           .splitter {
-              flex: 0 0 2.25rem;
-              pointer-events: none;
-          }
-
-          .splitter::before {
               display: none;
           }
 
@@ -478,7 +490,7 @@
           }
 
           h1 {
-              font-size: 1.5rem;
+              font-size: 2.1rem;
               -webkit-text-stroke-width: 1.25px;
           }
 
@@ -514,34 +526,34 @@
             h1.mb-0
               | ${SOURCE.title}
           .gig-head.text-muted(v-if="!isNarrow")
-            | Data @
+            ="data "
             a.ms-1.me-2(
                 href="${SOURCE.home_url}",
                 target="_blank",
                 rel="noopener",
                 title="Search beat.com.au"
             ) ${SOURCE.name}
+            ="source "
             a(
                 href="https://github.com/boscoh/gigmap",
                 target="_blank",
                 rel="noopener",
                 title="Open the gigmap source on GitHub"
-            ) GitHub
+            ) github
           .d-flex.gap-3.mt-3.align-items-start
             .summary.flex-grow-1.overflow-hidden
               template(v-if="isNarrow")
                 h1.mb-0.text-nowrap
                   | ${SOURCE.title}
                 .text-muted
-                  | data @
-                  a.ms-1(
+                  = "data "
+                  a(
                       href="${SOURCE.home_url}",
                       target="_blank",
                       rel="noopener",
                       title="Search beat.com.au"
                   ) ${SOURCE.name}
-                  | , source
-                  =" "
+                  =" source "
                   a(
                       href="https://github.com/boscoh/gigmap",
                       target="_blank",
@@ -565,7 +577,7 @@
                   i.fas.fa-spinner.fa-spin.me-2(v-if="busy")
                   | {{ statusText }}
 
-              .venue-group
+              .venue-group(v-if="!isNarrow")
                 .text-muted.small(v-if="!selectedGig")
                   | Click a row to focus a venue.
 
@@ -604,7 +616,7 @@
                 )
                   | {{ cell ? cell.day : "" }}
 
-          .text-muted.mt-3
+          .text-muted.mt-2
             | Coordinates ©
             a.ms-1(
               href="https://www.openstreetmap.org/copyright",
@@ -622,6 +634,17 @@
             div#map
 
         .splitter(@pointerdown="startDrag", title="Drag to resize")
+        .venue-bar.mt-3.mb-3(v-if="isNarrow")
+          .text-muted.small(v-if="!selectedGig")
+            | Click a row to focus a venue.
+          div.venue-name(v-if="selectedGig")
+            | {{ selectedGig.venue }}
+          .text-muted.small(v-if="venue.loading")
+            | Looking up the address...
+          .text-danger.small(v-if="venue.error")
+            | {{ venue.error }}
+          .small.venue-address(v-if="venue.data && venue.data.address")
+            | {{ venue.data.address }}
         .gig-frame(:class="frameClass")
           .gig-scroll.flex-grow-1(style="min-height: 0", @scroll="updateScrollEdges")
 
@@ -1228,12 +1251,15 @@
         }
 
         // The narrow layout scrolls the page as well as the list box. Move the
-        // page only when the top of the list box is above the screen.
+        // page only when the venue bar above the list box is above the screen,
+        // so the venue stays beside the rows.
         function scrollPageToList(scroller) {
             if (!isNarrow.value) {
                 return;
             }
-            const top = scroller.getBoundingClientRect().top;
+            const bar = document.querySelector(".venue-bar");
+            const margin = bar ? bar.getBoundingClientRect().height : 0;
+            const top = scroller.getBoundingClientRect().top - margin;
             if (top >= 0) {
                 return;
             }
