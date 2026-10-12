@@ -533,20 +533,21 @@
                 h1.mb-0.text-nowrap
                   | ${SOURCE.title}
                 .text-muted
-                  a(
-                      href="https://github.com/boscoh/gigmap",
-                      target="_blank",
-                      rel="noopener",
-                      title="Open the gigmap source on GitHub"
-                  ) gitHub
-                  =", "
-                  | data
-                  a.ms-1.me-2(
+                  | data @
+                  a.ms-1(
                       href="${SOURCE.home_url}",
                       target="_blank",
                       rel="noopener",
                       title="Search beat.com.au"
                   ) ${SOURCE.name}
+                  | , source
+                  =" "
+                  a(
+                      href="https://github.com/boscoh/gigmap",
+                      target="_blank",
+                      rel="noopener",
+                      title="Open the gigmap source on GitHub"
+                  ) github
               .d-flex.flex-nowrap.gap-2(v-if="!isNarrow")
                 button.calendar-day(
                   v-for="range in ranges",
