@@ -126,14 +126,11 @@ class JsonCache(Generic[M]):
         self,
         key: str,
         origin: Callable[[], Awaitable[M | None]],
-        *,
-        refresh: bool = False,
     ) -> M | None:
         """Load one value, or call `origin`, and store it."""
-        if not refresh:
-            hit = self.load(key)
-            if hit is not None:
-                return hit
+        hit = self.load(key)
+        if hit is not None:
+            return hit
         value = await origin()
         if value is not None:
             self.save(key, value)
@@ -202,11 +199,9 @@ class CachedSource:
         self,
         source: sources.GigSource,
         stores: DataStores,
-        refresh: bool = False,
     ) -> None:
         self._source = source
         self._stores = stores
-        self._refresh = refresh
 
     async def page(self, start_date: str, end_date: str) -> str:
         return await self._source.page(start_date, end_date)
@@ -215,7 +210,6 @@ class CachedSource:
         gigs = await self._stores.days.fetch(
             f"{start_date}_{end_date}",
             lambda: self._source.gigs(start_date, end_date),
-            refresh=self._refresh,
         )
         if gigs is None:
             raise sources.SourceError("the source gave no gig list")
@@ -225,7 +219,6 @@ class CachedSource:
         return await self._stores.gigs.fetch(
             sources.url_key(detail_url),
             lambda: self._source.gig_detail(detail_url),
-            refresh=self._refresh,
         )
 
     async def venue(self, venue_url: str) -> sources.Venue:

@@ -188,10 +188,6 @@ A gig file is the persistent store of the start time. The server reads the time
 from the gig detail page one time and uses the stored value after that. The
 server uses a small pool of connections for the first load of a date range.
 
-The `refresh=true` query parameter ignores the saved range JSON and the saved
-gig time files. The page does not send this parameter. A client can add it to
-the request.
-
 Set the directory with the `--data-dir` option or with the environment variable
 `GIGMAP_DATA_DIR`.
 
@@ -287,9 +283,9 @@ lookup fails.
 ## Endpoints
 
 - `GET /` — returns `index.html`
-- `GET /api/gigs?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&refresh=false` —
+- `GET /api/gigs?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` —
   returns the list of gigs as JSON
-- `GET /api/times?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&refresh=false` —
+- `GET /api/times?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` —
   streams one JSON line for each gig as the server reads its start time. Each
   line is `{"index": N, "time": "8:00pm"}`. `index` points into the list from
   `GET /api/gigs`
@@ -324,9 +320,7 @@ stores.
 
 The FastAPI dependency `source_dependency` gives one source for each
 request, then closes it. The dependency builds `CachedSource` around
-`BeatSource` and passes `data_dir`. It reads the
-`refresh` query parameter and gives the value to the wrapper. A test
-replaces the source with a fake:
+`BeatSource` and passes `data_dir`. A test replaces the source with a fake:
 
 ```python
 server.app.dependency_overrides[server.source_dependency] = lambda: fake

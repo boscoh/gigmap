@@ -183,22 +183,6 @@ def test_the_wrapper_caches_the_gig_reads(
     ]
 
 
-def test_the_wrapper_refetches_on_refresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
-    fake = FakeSource()
-    source = stores.CachedSource(fake, stores.DataStores(server.data_dir), refresh=True)
-
-    async def run() -> None:
-        await source.gigs("2026-10-01", "2026-10-02")
-        await source.gigs("2026-10-01", "2026-10-02")
-
-    asyncio.run(run())
-
-    assert fake.calls.count(("gigs", "2026-10-01", "2026-10-02")) == 2
-
-
 def test_the_venue_is_cached_only_with_coordinates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

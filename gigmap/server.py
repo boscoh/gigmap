@@ -57,12 +57,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=beat.SOURCE.title, lifespan=lifespan)
 
 
-async def source_dependency(
-    refresh: bool = Query(False),
-) -> AsyncIterator[sources.GigSource]:
+async def source_dependency() -> AsyncIterator[sources.GigSource]:
     """Give one cached source for the request, then close it."""
     async with beat.BeatSource() as site:
-        yield stores.CachedSource(site, stores.DataStores(data_dir), refresh)
+        yield stores.CachedSource(site, stores.DataStores(data_dir))
 
 
 SourceDep = Annotated[sources.GigSource, Depends(source_dependency)]
