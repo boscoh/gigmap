@@ -249,3 +249,5 @@ returns `None` for a missing field instead of raising, so a break stays quiet.
   address first and then the name. Some venues still have no marker.
 - Cloudflare can answer a challenge. The app then tries another browser
   fingerprint.
+- Cloudflare can answer `5xx`. That is a gateway or origin fault, so the app
+  retries the read. The app log holds each failed answer and the `cf-ray`.

@@ -256,9 +256,36 @@ class _FakeSession:
         return self.responses[impersonate]
 
 
+class _FakeSequenceSession:
+    """A curl_cffi session that answers a list of responses for one target."""
+
+    def __init__(self, responses: dict[str, list[_FakeResponse]]) -> None:
+        self.responses = {target: list(items) for target, items in responses.items()}
+        self.targets: list[str] = []
+
+    async def get(
+        self,
+        url: str,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        impersonate: str = "",
+    ) -> _FakeResponse:
+        self.targets.append(impersonate)
+        items = self.responses[impersonate]
+        return items.pop(0) if len(items) > 1 else items[0]
+
+
 def _fake_source(responses: dict[str, _FakeResponse]) -> beat.BeatSource:
     source = beat.BeatSource()
     source._session = cast(Any, _FakeSession(responses))
+    return source
+
+
+def _fake_source_with_sequence(
+    responses: dict[str, list[_FakeResponse]],
+) -> beat.BeatSource:
+    source = beat.BeatSource()
+    source._session = cast(Any, _FakeSequenceSession(responses))
     return source
 
 
@@ -287,6 +314,31 @@ def test_the_beat_source_does_not_retry_a_plain_error() -> None:
         asyncio.run(source._html(beat.BEAT_URL))
 
     assert cast(Any, source._session).targets == ["chrome"]
+
+
+def test_the_beat_source_retries_a_server_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(beat, "RETRY_DELAY_SECONDS", 0)
+    source = _fake_source_with_sequence(
+        {"chrome": [_FakeResponse(503), _FakeResponse(200, "<html>ok</html>")]}
+    )
+
+    assert asyncio.run(source._html(beat.BEAT_URL)) == "<html>ok</html>"
+    assert cast(Any, source._session).targets == ["chrome", "chrome"]
+
+
+def test_the_beat_source_gives_up_after_the_server_error_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(beat, "RETRY_DELAY_SECONDS", 0)
+    source = _fake_source_with_sequence({"chrome": [_FakeResponse(503)]})
+
+    with pytest.raises(sources.SourceError, match="answered status 503"):
+        asyncio.run(source._html(beat.BEAT_URL))
+
+    targets = cast(Any, source._session).targets
+    assert targets == ["chrome"] * beat.SERVER_ERROR_ATTEMPTS
 
 
 def test_the_beat_source_reports_a_challenge_after_every_target() -> None:

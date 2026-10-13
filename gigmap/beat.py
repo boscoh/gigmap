@@ -6,6 +6,8 @@ only module that reads beat.com.au. The server holds the cache and the HTTP
 routes.
 """
 
+import asyncio
+import logging
 import random
 import re
 from datetime import datetime
@@ -58,6 +60,13 @@ def target_order(start: str) -> tuple[str, ...]:
 HEADERS = {
     "Accept-Language": "en-AU,en;q=0.9",
 }
+
+# Cloudflare sits in front of the site. A 5xx is a gateway or origin fault.
+# The fault is short in most cases, so the app retries the same read.
+SERVER_ERROR_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 1.0
+
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_site_date(text: str | None) -> str | None:
@@ -182,28 +191,47 @@ class BeatSource:
             await session.close()
 
     async def _html(self, url: str, params: dict[str, str] | None = None) -> str:
+        """Return the page text, with a retry on a 5xx answer."""
         global _current_target
         session = self._session
         if session is None:
             raise RuntimeError("use BeatSource as an async context manager")
         status = 0
         for target in target_order(_current_target):
-            try:
-                response = await session.get(
-                    url, params=params, headers=HEADERS, impersonate=target
+            attempts = 0
+            while True:
+                attempts += 1
+                try:
+                    response = await session.get(
+                        url, params=params, headers=HEADERS, impersonate=target
+                    )
+                except curl_requests.RequestsError as error:
+                    LOGGER.warning("cannot reach beat.com.au: %s", error)
+                    raise sources.SourceError(
+                        f"cannot reach beat.com.au: {error}"
+                    ) from error
+                if response.status_code == 200:
+                    # Keep the target that passed, so the later reads start there.
+                    _current_target = target
+                    return response.text
+                status = response.status_code
+                mitigated = response.headers.get("cf-mitigated")
+                LOGGER.warning(
+                    "beat.com.au answered status %s for %s "
+                    "(cf-mitigated=%s, cf-ray=%s, attempt %d)",
+                    status,
+                    url,
+                    mitigated,
+                    response.headers.get("cf-ray"),
+                    attempts,
                 )
-            except curl_requests.RequestsError as error:
-                raise sources.SourceError(
-                    f"cannot reach beat.com.au: {error}"
-                ) from error
-            if response.status_code == 200:
-                # Keep the target that passed, so the later reads start there.
-                _current_target = target
-                return response.text
-            status = response.status_code
-            # A missing challenge header means a normal HTTP error. Stop.
-            if response.headers.get("cf-mitigated") is None:
-                break
+                # A challenge belongs to one fingerprint. Try the next target.
+                if mitigated is not None:
+                    break
+                # A 5xx is a gateway or origin fault. Retry the same target.
+                if status < 500 or attempts >= SERVER_ERROR_ATTEMPTS:
+                    raise sources.SourceError(f"beat.com.au answered status {status}")
+                await asyncio.sleep(RETRY_DELAY_SECONDS * attempts)
         raise sources.SourceError(f"beat.com.au answered status {status}")
 
     async def page(self, start_date: str, end_date: str) -> str:
