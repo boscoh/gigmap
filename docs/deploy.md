@@ -40,7 +40,13 @@ deployvm uv deploy tspots /Users/boscoh/p/gigmap \
   --outgoing-port 8080
 ```
 
-The script `deploy.sh` in the project root runs this command.
+The script `deploy.sh` in the project root runs the command:
+
+```bash
+./deploy.sh           # deploy to the port
+./deploy.sh update    # send a change
+./deploy.sh --ssl     # the domain and SSL, after the A records exist
+```
 
 Do not add `--no-ssl`. That flag belongs to `npm deploy`. For a uv app, omit
 `--domain` and the deploy is IP-only.

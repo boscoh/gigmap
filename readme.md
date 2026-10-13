@@ -62,14 +62,6 @@ The watcher looks at `.py` files only. That rule is correct for the other files:
 
 ## Deploy
 
-The app runs on the tspots instance on DigitalOcean, at `https://gigmap.dev`.
-
-```bash
-./deploy.sh           # deploy to the port
-./deploy.sh update    # send a change
-./deploy.sh --ssl     # the domain and SSL, after the A records exist
-```
-
 `docs/deploy.md` holds the record, the server layout, the domain, and the cron
 alternative. The cleanup specification is in `gigmap/stores.py`.
 
@@ -86,4 +78,3 @@ alternative. The cleanup specification is in `gigmap/stores.py`.
 | `data/`             | the saved JSON                                                       |
 | `docs/`             | the deploy and the domain record                                     |
 | `tests/`            | the pytest tests                                                     |
-| `deploy.sh`         | the deploy                                                           |
