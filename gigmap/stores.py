@@ -5,6 +5,63 @@ type, the file name, and the freshness rule. `DataStores` builds the three
 JSON caches from one data directory and holds the cleanup of that directory,
 so no caller passes a subdirectory. The cleanup removes the files that the
 app cannot use again. `CachedSource` reads through those caches.
+
+The cleanup specification:
+
+The data
+    The server writes one file for each cache:
+
+    * `data/days/gigmap_<start>_<end>.json` - the parsed gig list for one
+      date range
+    * `data/gigs/<slug>.json` - the start time of one gig
+    * `data/venues/<slug>.json` - the name, the address, and the
+      coordinates of one venue
+
+    `data/gigs/` grows fastest. A request for a date range reads one detail
+    page for each gig, and each answer becomes one file.
+
+The retention rules
+    * A day file: remove when the range end date is before today. The
+      calendar blocks a past day, so the app cannot ask for the file again.
+      The rule uses the date in the file name. A file with an unknown name
+      stays.
+    * A gig file: remove when the file is older than `--gig-days` (30). A
+      new lookup costs one request.
+    * A venue file: keep. The Nominatim policy needs the cache. The server
+      must not ask again for a venue with coordinates.
+
+The growth
+    * A day file is about 9 KB. One year is 365 files, about 3 MB.
+    * A gig file is about 4 KB. One year is 10,000 gigs, about 40 MB.
+    * A venue file is about 4 KB. One year is 500 venues, about 2 MB.
+
+The command
+    The command is `uv run gigmap clean`. `gigmap.server` holds the command
+    and the schedule.
+
+    * `--data-dir` - `./data` - directory for the saved files
+    * `--gig-days` - `30` - keep a gig time file for this many days
+    * `--dry-run` - off - print the plan and remove nothing
+    * `--quiet` - off - print nothing
+
+The schedule
+    The server runs the cleanup in the FastAPI lifespan. The loop runs one
+    time at startup, then each 24 hours. `CLEANUP_INTERVAL_SECONDS` sets the
+    period. The loop uses the server's local date. The server is UTC, so the
+    app command pins the timezone with `TZ=Australia/Melbourne`.
+
+The tests
+    `uv run pytest` runs `tests/test_cleanup.py`. The tests cover the date
+    rule, the age rule, the dry run, the report, the loop, and the lifespan.
+
+Later work
+    The gig file holds no event date:
+
+        { "time": "7:30pm", "detail_url": "https://beat.com.au/abby-hayes/" }
+
+    A `date` field makes the gig rule exact. The server has the gig in hand
+    at `gig_time`, so the change is small. The rule then becomes: remove
+    when the event date is before today.
 """
 
 import os
@@ -161,6 +218,31 @@ class DataStores:
 
     def clean(self, now: float, gig_days: int, dry_run: bool) -> CleanReport:
         """Remove the day files of a past range and the old gig time files.
+
+        The algorithm:
+
+            today = date of now
+            for path in data/days/gigmap_*.json:
+                end = the date from the file name
+                if end < today and age(path) >= DAYS_CACHE_SECONDS:
+                    remove(path)
+
+            cutoff = now - gig_days * 86400
+            for path in data/gigs/*.json:
+                if mtime(path) < cutoff and age(path) >= DAYS_CACHE_SECONDS:
+                    remove(path)
+
+            # data/venues/*.json is never touched
+
+        The safety rules:
+
+        1. Keep each file younger than `DAYS_CACHE_SECONDS` (3 hours). A
+           request can hold the file.
+        2. Match the name pattern only.
+        3. Do not remove a directory.
+        4. Do not remove a venue file.
+        5. A failed removal must not stop the run.
+        6. `--dry-run` removes nothing.
 
         A venue file stays. The Nominatim policy needs the cache.
         """
