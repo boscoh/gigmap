@@ -2,6 +2,8 @@
 
 This shows how I decide what to see on a weekend.
 
+The live site is at [gigmap.dev](https://gigmap.dev).
+
 I've found that existing gig guides do not visualize their data
 the way I want. So `gigmap` sorts gigs by days, shows where
 they are on a map, and lets you sort the data
