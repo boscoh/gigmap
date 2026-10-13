@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 data/
 *.egg-info/
+
+# Local files. Keep them in the directory, out of the repo.
+deploy.sh
+docs/domain.md
