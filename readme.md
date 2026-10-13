@@ -38,7 +38,6 @@ service, so we must be careful in how we use it.
 ## Run
 
 ```bash
-cd ~/p/gigmap
 uv run gigmap serve
 ```
 
@@ -60,11 +59,6 @@ The watcher looks at `.py` files only. That rule is correct for the other files:
 - `data/` — the server writes these files during a request. A watch on that
   directory would cause a loop.
 
-## Deploy
-
-`docs/deploy.md` holds the record, the server layout, the domain, and the cron
-alternative. The cleanup specification is in `gigmap/stores.py`.
-
 ## The files
 
 | File                | Why it exists                                                        |
@@ -76,5 +70,4 @@ alternative. The cleanup specification is in `gigmap/stores.py`.
 | `gigmap/stores.py`  | the JSON cache, the three stores, the cleanup, and the cached source |
 | `gigmap/index.html` | the whole client, in one file                                        |
 | `data/`             | the saved JSON                                                       |
-| `docs/`             | the deploy and the domain record                                     |
 | `tests/`            | the pytest tests                                                     |

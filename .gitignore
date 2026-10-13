@@ -8,3 +8,4 @@ data/
 # Local files. Keep them in the directory, out of the repo.
 deploy.sh
 docs/domain.md
+docs/deploy.md
