@@ -4,34 +4,37 @@ This shows how I decide what to see on a weekend.
 
 The live site is at [gigmap.dev](https://gigmap.dev).
 
-I've found that existing gig guides do not visualize their data
-the way I want. So `gigmap` sorts gigs by days, shows where
-they are on a map, and lets you sort the data
-on the page.
+I've found that existing gig guides do not visualize their data the way I want.
+So `gigmap` sorts gigs by days, shows where they are on a map, and lets you sort
+the data on the page.
 
 ## This is a data reformatter
 
-The data here is extracted from other websites, in this case, the
-excellent Melbourne music magazine `beat.com.au`.
+The data here is extracted from other websites, in this case, the excellent
+Melbourne music magazine `beat.com.au`.
 
-We then merge all the relevant information - dates, venue location, times,
-geo location, Google search terms - and send it to the frontend.
+We then merge all the relevant information - dates, venue location, times, geo
+location, Google search terms - and send it to the frontend.
 
-The backend has been nicely refactored, so a different data source
-can easily be slotted in. The data fetching has been gated and cached
-so it does not hammer the origin data source. It's a small data set
-so we only use a simple json cache with a cleanup sweep.
+The backend has been nicely refactored, so a different data source can easily be
+slotted in. The data fetching has been gated and cached so it does not hammer
+the origin data source. It's a small data set so we only use a simple json cache
+with a cleanup sweep.
 
 ## The frontend is one single html page
 
-Since this is a small site, I've saved myself all the hassle of compiling a webapp
-by taking the [one page approach](https://github.com/boscoh/onepageapp).
-There is only one major frontend framework that makes
-this easy: Vue. Every external module is loaded from a CDN (Vue, Bootstrap, Pug,
-Lodash, Leaflet)
+Since this is a small site, I've saved myself all the hassle of compiling a
+webapp by taking the [one page approach](https://github.com/boscoh/onepageapp).
+There is only one major frontend framework that makes this easy: Vue. Every
+external module is loaded from a CDN ([Vue](https://vuejs.org/), Bootstrap,
+[Pug](https://pugjs.org/), [Leaflet](https://leafletjs.com/)).
 
-The mapping comes from the brilliant open-source OpenStreetMap, which
-is a free service, so we must be careful in how we use it.
+I use [pug](https://pugjs.org/) templates instead of html, not because I am a
+masochist, but because I genuinely read, and modify, pug much faster than with
+html.
+
+The mapping comes from the brilliant open-source OpenStreetMap, which is a free
+service, so we must be careful in how we use it.
 
 ## Run
 
@@ -69,8 +72,7 @@ The app runs on the tspots instance on DigitalOcean, at `https://gigmap.dev`.
 ```
 
 `docs/deploy.md` holds the record, the server layout, the domain, and the cron
-alternative.
-The cleanup specification is in `gigmap/stores.py`.
+alternative. The cleanup specification is in `gigmap/stores.py`.
 
 ## The files
 
