@@ -52,7 +52,8 @@ uv run pytest                   # the tests
 uv sync                         # build the environment again
 ```
 
-The watcher looks at `.py` files only. That rule is correct for the other files:
+The watcher looks at `.py` files, only. That rule is correct for the other
+files:
 
 - `index.html` — the server reads this file on each request. Refresh the
   browser. A restart is not necessary.
