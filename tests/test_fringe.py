@@ -312,6 +312,22 @@ def test_a_diary_row_becomes_a_gig() -> None:
     assert gig.price == "$55.00 - $69.00"
     # A paid gig carries the booking anchor of the event page.
     assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
+    assert gig.status == "Available"
+
+
+def test_a_sold_out_row_keeps_the_ticket_state() -> None:
+    """The state belongs to one performance, so one day can sell out alone."""
+    gig = fringe.parse_performance(
+        diary_row(status="SoldOut"), "2026-10-17", {}, {}
+    )
+    assert gig is not None
+    assert gig.status == "SoldOut"
+
+
+def test_a_row_without_a_state_holds_no_status() -> None:
+    gig = fringe.parse_performance(diary_row(status=None), "2026-10-17", {}, {})
+    assert gig is not None
+    assert gig.status is None
 
 
 def test_a_gig_without_an_event_row_holds_no_genre_or_price() -> None:

@@ -385,6 +385,10 @@ def parse_performance(
     A cancelled performance is not a gig. The `On Demand` group answers for
     every day, so a row with `onDemand` true is not a gig of this day. A row
     of another day is dropped as well, so the day of a gig is exact.
+
+    The `status` of the performance holds the ticket state of that day, for
+    example `Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. The gig
+    keeps the state, so the reader can see a sold-out show.
     """
     performance = row.get("performance")
     if not isinstance(performance, dict):
@@ -412,6 +416,7 @@ def parse_performance(
         genres=list(facts.genres) if facts is not None else [],
         categories=accessibility_names(row.get("accessibilities")),
         price=price,
+        status=text(performance.get("status")),
         ticket_url=ticket_link(detail_url, price),
         image_url=text(image_url),
         time=local_time_text(stamp),

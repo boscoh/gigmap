@@ -40,6 +40,9 @@ class Gig(BaseModel):
     A scalar field is None when the site does not show the value. A list
     field is empty when the site does not show the value. The `time` field
     comes from the gig detail page, not from the gig guide page.
+    The `status` field holds the ticket state of one performance as the
+    site names it, for example `Available` or `SoldOut`. The field is None
+    when the site names no state.
     """
 
     artist: str | None = None
@@ -51,6 +54,7 @@ class Gig(BaseModel):
     genres: list[str] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
     price: str | None = None
+    status: str | None = None
     ticket_url: str | None = None
     image_url: str | None = None
     image_alt: str | None = None

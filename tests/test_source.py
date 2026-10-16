@@ -152,6 +152,7 @@ def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -
             "genres": [],
             "categories": [],
             "price": None,
+            "status": None,
             "ticket_url": None,
             "image_url": None,
             "image_alt": None,

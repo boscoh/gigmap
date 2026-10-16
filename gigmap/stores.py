@@ -107,7 +107,7 @@ VENUES_SUBDIR = "venues"
 # a gig holds, so the app never serves an answer of the older code. The
 # app then ignores each day file of the older number, and the cleanup
 # removes it on the usual rules.
-DAYS_VERSION = "v2"
+DAYS_VERSION = "v3"
 
 # The day files are named gigmap_<source>_<version>_<start>_<end>.json.
 # A file of an older layout has no source part or no version part, and the
