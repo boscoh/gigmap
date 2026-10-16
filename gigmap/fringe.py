@@ -62,8 +62,8 @@ The site has no address for one performance. The book button of every event
 card sends the reader to the anchor `#sessions-book-now`, where the sessions
 list shows each performance. That anchor is the value of `ticket_url`.
 
-A gig holds a link only when it holds a price to click. A free gig holds no
-link, and a gig without a price holds no link.
+A free gig holds no link. Every other gig holds the link, even when the
+price is not known, so the reader can open the sessions list.
 
 The shapes
 
@@ -366,10 +366,10 @@ def ticket_link(detail_url: str | None, price: str | None) -> str | None:
 
     The site sends the anchor `#sessions-book-now` from every event card. The
     sessions list below that anchor is the only booking path that the site
-    offers. A free event needs no link, and a gig without a price shows no
-    price to click.
+    offers. A free event needs no link. A gig with no price still holds the
+    link, so the reader can open the sessions list.
     """
-    if detail_url is None or price is None or price == FREE_PRICE:
+    if detail_url is None or price == FREE_PRICE:
         return None
     return f"{detail_url}{BOOKING_ANCHOR}"
 

@@ -267,9 +267,16 @@ def test_ticket_link_is_empty_for_a_free_gig() -> None:
     assert fringe.ticket_link(EVENT_URL, "Free") is None
 
 
-def test_ticket_link_is_empty_without_a_price_or_a_page() -> None:
-    assert fringe.ticket_link(EVENT_URL, None) is None
+def test_ticket_link_is_empty_without_a_page() -> None:
     assert fringe.ticket_link(None, "$30.00") is None
+    assert fringe.ticket_link(None, None) is None
+
+
+def test_ticket_link_holds_a_gig_with_no_price() -> None:
+    """A gig with no clear price still opens the sessions list."""
+    assert fringe.ticket_link(EVENT_URL, None) == (
+        f"{EVENT_URL}#sessions-book-now"
+    )
 
 
 def test_price_text_prefers_the_override() -> None:
@@ -336,8 +343,8 @@ def test_a_gig_without_an_event_row_holds_no_genre_or_price() -> None:
     assert gig.genres == []
     assert gig.price is None
     assert gig.venue_url is None
-    # A gig without a price shows no price to click, so it holds no link.
-    assert gig.ticket_url is None
+    # The price is not known, so the link reads Tickets.
+    assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
 
 
 def test_a_cancelled_or_on_demand_row_is_not_a_gig() -> None:
