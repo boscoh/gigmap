@@ -17,9 +17,13 @@
   <!-- prevent auto-zooming on mobile browsers -->
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-  <!-- The server fills these from the source (beat.SOURCE). -->
+  <!-- The server fills these from the source and the mount prefix. -->
   <title>__SOURCE_TITLE__</title>
-  <script>window.SOURCE = __SOURCE_INFO__;</script>
+  <script>
+      window.SOURCE = __SOURCE_INFO__;
+      // The path of this source. "" at "/", "/fringe" at "/fringe".
+      window.API_PREFIX = "__API_PREFIX__";
+  </script>
 
   <!-- Bootstrap -->
   <link
@@ -79,7 +83,7 @@
       }
 
       window.api = ky.create({
-          prefix: "/api",
+          prefix: `${window.API_PREFIX}/api`,
           hooks: {
               beforeError: [
                   async ({error}) => {
@@ -492,8 +496,13 @@
           }
 
           .gig-table .btn {
-              font-size: 0.75rem;
+              /* The ticket text reads small, like the tag line of a gig. */
+              font-size: 0.7rem;
               padding: 0.1rem 0.4rem;
+              /* One price fits the button, and a price range takes two
+                 lines. 4rem is the narrowest width that keeps the range on
+                 two lines and leaves no separator on a line of its own. */
+              max-width: 4rem;
           }
 
           h1 {
@@ -660,10 +669,14 @@
 
             table.table.table-sm.table-hover.align-top.mb-0.gig-table(v-if="loading || gigs.length")
               colgroup
-                col(style="width: 5rem")
+                //- A narrow screen has one column of free text: the artist.
+                //- Its width stays open, so the browser gives it every pixel
+                //- that the three measured columns do not use. A measured
+                //- column keeps its share and never grows into that space.
+                col(:style="isNarrow ? {width: '4.75rem'} : {width: '5rem'}")
                 col.artist-col(:style="isNarrow ? {} : {width: '50%'}")
-                col.venue-col(v-if="!isNarrow")
-                col(style="width: 5.5rem")
+                col.venue-col(:style="isNarrow ? {width: '15%'} : {}")
+                col(:style="isNarrow ? {width: '5rem'} : {width: '5.5rem'}")
               thead
                 tr
                   th.sortable(@click="toggleSort('time')")
@@ -672,7 +685,7 @@
                   th.sortable(@click="toggleSort('artist')")
                     | Artist
                     i.fas.ms-1(v-if="sortKey === 'artist'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
-                  th.sortable.venue-col(v-if="!isNarrow", @click="toggleSort('venue')")
+                  th.sortable.venue-col(@click="toggleSort('venue')")
                     | Venue
                     i.fas.ms-1(v-if="sortKey === 'venue'", :class="sortDir === 'asc' ? 'fa-caret-up' : 'fa-caret-down'")
                   th.sortable(@click="toggleSort('price')")
@@ -685,7 +698,7 @@
                       .skeleton
                     td
                       .skeleton
-                    td.venue-col(v-if="!isNarrow")
+                    td.venue-col
                       .skeleton
                     td
                       .skeleton
@@ -726,9 +739,11 @@
                           i.fas.fa-search.text-muted
                     div.text-muted
                       | {{ tagLine(gig) }}
-                  td.venue-col(v-if="!isNarrow")
+                  td.venue-col
                     .venue-line
-                      span.venue-name
+                      //- The venue reads like the tag line of a gig: the
+                      //- muted class makes the text small and grey.
+                      span.venue-name.text-muted
                         | {{ gig.venue }}
                       span.venue-icons
                         a.ms-2(

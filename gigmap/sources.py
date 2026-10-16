@@ -105,6 +105,25 @@ class GigSource(Protocol):
         ...
 
 
+class SourcePool(Protocol):
+    """A gig source that owns a connection pool.
+
+    The server opens one pool for each request and closes it at the end.
+    `CachedSource` is a wrapper, not a pool, so it does not hold this
+    shape.
+    """
+
+    # pi-lens-ignore: no-ellipsis-body
+    async def __aenter__(self) -> GigSource:
+        """Open the pool."""
+        ...
+
+    # pi-lens-ignore: no-ellipsis-body
+    async def __aexit__(self, *_args: object) -> None:
+        """Close the pool."""
+        ...
+
+
 def url_key(url: str) -> str:
     """A short cache name for a page url."""
     name = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]

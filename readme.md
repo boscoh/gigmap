@@ -41,7 +41,8 @@ service, so we must be careful in how we use it.
 uv run gigmap serve
 ```
 
-Then open `http://127.0.0.1:8000/`.
+Then open `http://127.0.0.1:8000/`. The Fringe site is at
+`http://127.0.0.1:8000/fringe/`.
 
 ```bash
 uv run gigmap --help            # the commands
@@ -60,6 +61,27 @@ files:
 - `data/` — the server writes these files during a request. A watch on that
   directory would cause a loop.
 
+
+## The sites
+
+One server answers both sites. The path says which site:
+
+| Path | The site | What a gig is |
+| ---- | -------- | ------------- |
+| `/` | beat.com.au | one gig card of the guide |
+| `/fringe/` | melbournefringe.com.au | one performance of the festival |
+
+The reads of a site sit under its own path, so the page and its data stay
+together:
+
+```
+/            /api/gigs           beat.com.au
+/fringe/     /fringe/api/gigs    melbournefringe.com.au
+```
+
+Each site keeps its own cache files, so one site never answers for the
+other.
+
 ## The files
 
 | File                | Why it exists                                                        |
@@ -67,6 +89,7 @@ files:
 | `gigmap/server.py`  | the HTTP routes, the dependency, and the cleanup task                |
 | `gigmap/sources.py` | the protocol and the data classes, so a second site is possible      |
 | `gigmap/beat.py`    | every rule about `beat.com.au`, and the only reader of that site     |
+| `gigmap/fringe.py`  | every rule about the Fringe API, and the only reader of that site    |
 | `gigmap/geocode.py` | the only reader of Nominatim, and the map links                      |
 | `gigmap/stores.py`  | the JSON cache, the three stores, the cleanup, and the cached source |
 | `gigmap/index.html` | the whole client, in one file                                        |

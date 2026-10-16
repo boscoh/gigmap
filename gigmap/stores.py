@@ -11,14 +11,32 @@ The cleanup specification:
 The data
     The server writes one file for each cache:
 
-    * `data/days/gigmap_<start>_<end>.json` - the parsed gig list for one
-      date range
-    * `data/gigs/<slug>.json` - the start time of one gig
-    * `data/venues/<slug>.json` - the name, the address, and the
+    * `data/days/gigmap_<source>_<version>_<start>_<end>.json` - the parsed
+      gig list for one date range
+    * `data/gigs/<source>_<slug>.json` - the start time of one gig
+    * `data/venues/<source>_<slug>.json` - the name, the address, and the
       coordinates of one venue
 
     `data/gigs/` grows fastest. A request for a date range reads one detail
     page for each gig, and each answer becomes one file.
+
+The namespace
+
+The app serves two sites from one server, and the two sites answer for the
+same day range with different gigs. Each site has a path, and every file
+name starts with the name of that path. So the answer of one site never
+becomes the answer of another site.
+
+A file of the first layout has no source part in the name. The app never
+reads it again, and the cleanup removes it on the usual rules.
+
+The version
+
+A day file holds the answer of the source at one time. A change to what a
+gig holds, or to how the source builds a gig, makes that answer wrong, and
+the app must not serve it. `DAYS_VERSION` names the shape, and every day
+file carries it. Raise the number with such a change. The app then ignores
+each file of the older number, and the cleanup removes it.
 
 The retention rules
     * A day file: remove when the range end date is before today. The
@@ -85,9 +103,18 @@ DAYS_SUBDIR = "days"
 GIGS_SUBDIR = "gigs"
 VENUES_SUBDIR = "venues"
 
-# The day files are named gigmap_<start>_<end>.json.
+# The shape of a day file. Raise this number when the source changes what
+# a gig holds, so the app never serves an answer of the older code. The
+# app then ignores each day file of the older number, and the cleanup
+# removes it on the usual rules.
+DAYS_VERSION = "v2"
+
+# The day files are named gigmap_<source>_<version>_<start>_<end>.json.
+# A file of an older layout has no source part or no version part, and the
+# cleanup still removes it.
 DAY_FILE_RE = re.compile(
-    r"gigmap_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
+    r"gigmap_(?:(?P<source>[a-z0-9]+)_)?(?:(?P<version>v[0-9]+)_)?"
+    r"(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
 )
 
 M = TypeVar("M")
@@ -205,16 +232,32 @@ class JsonCache(Generic[M]):
 class DataStores:
     """The three JSON caches of one data directory, and its cleanup."""
 
-    def __init__(self, data_dir: Callable[[], Path]) -> None:
+    def __init__(self, data_dir: Callable[[], Path], namespace: str = "") -> None:
+        # Two sources can answer for the same day range, and the two answers
+        # do not agree. The namespace keeps the files of one source apart
+        # from the files of another source.
+        prefix = f"{namespace}_" if namespace else ""
         self.days = JsonCache(
             data_dir,
             DAYS_SUBDIR,
             TypeAdapter(list[sources.Gig]),
-            filename=lambda key: f"gigmap_{key}.json",
+            filename=lambda key: (
+                f"gigmap_{prefix}{DAYS_VERSION}_{key}.json"
+            ),
             max_age=DAYS_CACHE_SECONDS,
         )
-        self.gigs = JsonCache(data_dir, GIGS_SUBDIR, TypeAdapter(sources.GigDetail))
-        self.venues = JsonCache(data_dir, VENUES_SUBDIR, TypeAdapter(sources.Venue))
+        self.gigs = JsonCache(
+            data_dir,
+            GIGS_SUBDIR,
+            TypeAdapter(sources.GigDetail),
+            filename=lambda key: f"{prefix}{key}.json",
+        )
+        self.venues = JsonCache(
+            data_dir,
+            VENUES_SUBDIR,
+            TypeAdapter(sources.Venue),
+            filename=lambda key: f"{prefix}{key}.json",
+        )
 
     def clean(self, now: float, gig_days: int, dry_run: bool) -> CleanReport:
         """Remove the day files of a past range and the old gig time files.

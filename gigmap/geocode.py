@@ -104,7 +104,16 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
 
 
 async def enrich_venue(venue: sources.Venue) -> sources.Venue:
-    """Add the geocode and the map links to one venue."""
+    """Add the geocode and the map links to one venue.
+
+    A source that gives the coordinates needs no lookup. The map links
+    then come from those coordinates.
+    """
+    if venue.latitude is not None and venue.longitude is not None:
+        venue.map_embed_url, venue.map_url = map_urls(
+            venue.latitude, venue.longitude
+        )
+        return venue
     place = await geocode_venue(venue.name, venue.address)
     if place is None:
         venue.latitude = None

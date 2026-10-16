@@ -73,6 +73,65 @@ def test_url_key_uses_the_last_path_segment() -> None:
     assert sources.url_key("https://beat.com.au/") == "page"
 
 
+def test_the_root_path_answers_the_beat_source() -> None:
+    assert server.source_name_of("/") == "beat"
+    assert server.source_name_of("/api/gigs") == "beat"
+
+
+def test_a_source_prefix_answers_that_source() -> None:
+    assert server.source_name_of("/fringe/") == "fringe"
+    assert server.source_name_of("/fringe/api/gigs") == "fringe"
+
+
+def test_an_unknown_prefix_answers_the_root_source() -> None:
+    assert server.source_name_of("/nowhere/api/gigs") == "beat"
+
+
+def test_the_source_prefix_of_a_path() -> None:
+    assert server.source_prefix("/") == ""
+    assert server.source_prefix("/api/gigs") == ""
+    assert server.source_prefix("/fringe/api/gigs") == "/fringe"
+
+
+def test_each_site_serves_its_own_page_and_reads(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    http, _ = client
+
+    root = http.get("/")
+    fringe = http.get("/fringe/")
+
+    assert root.status_code == 200
+    assert '<title>Melb Gig Map</title>' in root.text
+    assert 'window.API_PREFIX = "";' in root.text
+    assert fringe.status_code == 200
+    assert '<title>Melb Fringe Gig Map</title>' in fringe.text
+    assert 'window.API_PREFIX = "/fringe";' in fringe.text
+
+
+def test_a_read_answers_on_the_fringe_path(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    http, fake = client
+
+    response = http.get(
+        "/fringe/api/gigs",
+        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
+    )
+
+    assert response.status_code == 200
+    assert fake.calls == [("gigs", "2026-10-01", "2026-10-02")]
+
+
+def test_the_beat_path_is_not_served_twice(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    """The root site is the beat site, so /beat is not a second copy."""
+    http, _ = client
+
+    assert http.get("/beat/").status_code == 404
+
+
 def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -> None:
     http, fake = client
 
@@ -133,6 +192,34 @@ def test_venue_route_uses_the_source(
     assert data["name"] == "Venue"
     assert data["latitude"] is None
 
+
+
+def test_a_reversed_range_answers_400(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    http, fake = client
+
+    response = http.get(
+        "/api/gigs",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-17"},
+    )
+
+    assert response.status_code == 400
+    assert fake.calls == []
+
+
+def test_a_damaged_date_answers_400(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    http, fake = client
+
+    response = http.get(
+        "/api/gigs",
+        params={"start_date": "17/10/2026", "end_date": "2026-10-17"},
+    )
+
+    assert response.status_code == 400
+    assert fake.calls == []
 
 def test_a_bad_url_answers_400(client: tuple[TestClient, FakeSource]) -> None:
     http, fake = client
