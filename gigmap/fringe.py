@@ -60,7 +60,7 @@ The ticket link
 
 The site has no address for one performance. The book button of every event
 card sends the reader to the anchor `#sessions-book-now`, where the sessions
-list shows each performance. That anchor is the value of `ticket_url`.
+list shows each performance. That anchor is the value of `Ticket.url`.
 
 A free gig holds no link. Every other gig holds the link, even when the
 price is not known, so the reader can open the sessions list.
@@ -68,10 +68,11 @@ price is not known, so the reader can open the sessions list.
 The ticket state
 
 Each performance row of the diary holds a `status`. The value is
-`Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. The site marks a
-free unticketed event with `SoldOut` as well. That event holds no ticket
-to sell out, so the state belongs to a gig with a booking link only. A
-free gig then reads `Free`.
+`Available`, `SellingFast`, `AlmostGone`, `SoldOut`, or `PastEvent`. The site
+marks a free unticketed event with `SoldOut` as well. That event holds no
+ticket to sell out, so a free gig reports the group `Free` and no state. The
+module maps each word to one `sources.Ticket`; the `state` keeps the word and
+the `label` holds the text that the page shows.
 
 The shapes
 
@@ -105,6 +106,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
+from enum import Enum
 from typing import Any, NamedTuple, TypeVar
 from urllib.parse import urlsplit
 
@@ -132,6 +134,35 @@ EVENT_FIELDS = (
 BOOKING_ANCHOR = "#sessions-book-now"
 # The price text of a free event. A free event needs no booking link.
 FREE_PRICE = "Free"
+
+
+# The ticket state of one performance. The source owns this set of words.
+# A consumer uses the shared `TicketGroup`, not these words.
+class FringeState(str, Enum):
+    AVAILABLE = "Available"
+    SELLING_FAST = "SellingFast"
+    ALMOST_GONE = "AlmostGone"
+    SOLD_OUT = "SoldOut"
+    PAST = "PastEvent"
+
+
+FRINGE_STATES = {state.value: state for state in FringeState}
+
+# The label of each state. None means "the price, else Tickets".
+STATE_LABEL: dict[FringeState, str | None] = {
+    FringeState.AVAILABLE: None,
+    FringeState.SELLING_FAST: "Selling fast",
+    FringeState.ALMOST_GONE: "Almost gone",
+    FringeState.SOLD_OUT: "Sold out",
+    FringeState.PAST: "Past event",
+}
+STATE_GROUP = {
+    FringeState.AVAILABLE: sources.TicketGroup.ON_SALE,
+    FringeState.SELLING_FAST: sources.TicketGroup.LIMITED,
+    FringeState.ALMOST_GONE: sources.TicketGroup.LIMITED,
+    FringeState.SOLD_OUT: sources.TicketGroup.UNAVAILABLE,
+    FringeState.PAST: sources.TicketGroup.UNAVAILABLE,
+}
 
 # The app serves this one site, so the source carries the app details.
 SOURCE = sources.SourceInfo(
@@ -295,6 +326,14 @@ def event_page_url(route: object) -> str | None:
     return SITE_URL + path
 
 
+class PriceFacts(NamedTuple):
+    """The display text and the numeric bounds of one ticket price."""
+
+    text: str | None
+    low: float | None
+    high: float | None
+
+
 class EventFacts(NamedTuple):
     """The genre and the ticket price of one event.
 
@@ -303,11 +342,11 @@ class EventFacts(NamedTuple):
     """
 
     genres: list[str]
-    price: str | None
+    price: PriceFacts
 
 
-def price_text(properties: dict[str, Any]) -> str | None:
-    """Return the ticket price of one event as the site shows it.
+def price_facts(properties: dict[str, Any]) -> PriceFacts:
+    """Return the display text and the numeric bounds of one event price.
 
     The site shows a range with two prices, one price, or the word `Free`.
     The read matches that form.
@@ -323,10 +362,12 @@ def price_text(properties: dict[str, Any]) -> str | None:
     """
     override = text(properties.get("priceRangeOverride"))
     if override is not None:
-        return override
+        if override == FREE_PRICE:
+            return PriceFacts(override, 0.0, 0.0)
+        return PriceFacts(override, None, None)
     low = number(properties.get("price"))
     if low is None:
-        return None
+        return PriceFacts(None, None, None)
     high = number(properties.get("maxPrice"))
     if high is None:
         high = low
@@ -336,10 +377,15 @@ def price_text(properties: dict[str, Any]) -> str | None:
             low = min(low, preview)
     low, high = round(low), round(high)
     if low == 0 and high == 0:
-        return FREE_PRICE
+        return PriceFacts(FREE_PRICE, 0.0, 0.0)
     if low == high:
-        return f"${low:.2f}"
-    return f"${low:.2f} - ${high:.2f}"
+        return PriceFacts(f"${low:.2f}", float(low), float(high))
+    return PriceFacts(f"${low:.2f} - ${high:.2f}", float(low), float(high))
+
+
+def price_text(properties: dict[str, Any]) -> str | None:
+    """Return the ticket price of one event as the site shows it."""
+    return price_facts(properties).text
 
 
 def parse_event_facts(row: dict[str, Any]) -> EventFacts:
@@ -354,7 +400,7 @@ def parse_event_facts(row: dict[str, Any]) -> EventFacts:
             name = text(genre.get("name")) if isinstance(genre, dict) else None
             if name is not None:
                 genres.append(name)
-    return EventFacts(genres=genres, price=price_text(properties))
+    return EventFacts(genres=genres, price=price_facts(properties))
 
 
 def accessibility_names(rows: object) -> list[str]:
@@ -382,6 +428,54 @@ def ticket_link(detail_url: str | None, price: str | None) -> str | None:
     return f"{detail_url}{BOOKING_ANCHOR}"
 
 
+def ticket_for(
+    detail_url: str | None,
+    price: PriceFacts | None,
+    raw_state: str | None,
+) -> sources.Ticket | None:
+    """Return the ticket of one performance, or None when it holds no ticket.
+
+    A free event holds no booking link and no ticket to sell out. The site
+    marks it `SoldOut`, but that word does not belong to the gig, so a free
+    gig reports the group `Free` and no state.
+
+    The source owns the state words. An unknown word stays in `state`, takes
+    the group `Unknown`, and falls back to the price or the word `Tickets`.
+    """
+    price_text_value = price.text if price is not None else None
+    url = ticket_link(detail_url, price_text_value)
+    if price_text_value == FREE_PRICE:
+        return sources.Ticket(
+            label=FREE_PRICE,
+            group=sources.TicketGroup.FREE,
+            price=FREE_PRICE,
+            price_min=0.0,
+            price_max=0.0,
+        )
+    if raw_state is None and url is None and price_text_value is None:
+        return None
+    known = FRINGE_STATES.get(raw_state) if raw_state else None
+    label = STATE_LABEL.get(known) if known is not None else None
+    if known is None:
+        group = (
+            sources.TicketGroup.ON_SALE
+            if raw_state is None
+            else sources.TicketGroup.UNKNOWN
+        )
+    else:
+        group = STATE_GROUP.get(known, sources.TicketGroup.UNKNOWN)
+    fallback = price_text_value or ("Tickets" if url else raw_state or "")
+    return sources.Ticket(
+        state=raw_state,
+        label=label or fallback,
+        group=group,
+        price=price_text_value,
+        price_min=price.low if price is not None else None,
+        price_max=price.high if price is not None else None,
+        url=url,
+    )
+
+
 def parse_performance(
     row: dict[str, Any],
     day: str,
@@ -394,10 +488,10 @@ def parse_performance(
     every day, so a row with `onDemand` true is not a gig of this day. A row
     of another day is dropped as well, so the day of a gig is exact.
 
-    The `status` of the performance holds the ticket state of that day, for
-    example `Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. A free
-    event holds no booking link and no ticket to sell out, so the gig keeps
-    the state only with a booking link, and a free gig reads Free.
+    The `status` of the performance holds the ticket state of that day. The
+    module maps the site word to a `Ticket`. A free event holds no booking
+    link and no ticket to sell out, so it reports the group `Free` and no
+    state.
     """
     performance = row.get("performance")
     if not isinstance(performance, dict):
@@ -416,7 +510,8 @@ def parse_performance(
     image_url = image.get("imageUrl") if isinstance(image, dict) else None
     detail_url = event_page_url(row.get("route"))
     price = facts.price if facts is not None else None
-    ticket_url = ticket_link(detail_url, price)
+    raw_state = text(performance.get("status"))
+    ticket = ticket_for(detail_url, price, raw_state)
     return sources.Gig(
         artist=text(row.get("name")),
         detail_url=detail_url,
@@ -425,11 +520,7 @@ def parse_performance(
         venue_url=venue.venue_url if venue is not None else None,
         genres=list(facts.genres) if facts is not None else [],
         categories=accessibility_names(row.get("accessibilities")),
-        price=price,
-        # A gig with no booking link has no ticket, so the site state of
-        # an unticketed free event does not belong to the gig.
-        status=text(performance.get("status")) if ticket_url else None,
-        ticket_url=ticket_url,
+        ticket=ticket,
         image_url=text(image_url),
         time=local_time_text(stamp),
     )

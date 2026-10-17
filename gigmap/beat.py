@@ -114,6 +114,51 @@ def parse_gig_detail(html: str, detail_url: str) -> sources.GigDetail:
     return sources.GigDetail(detail_url=detail_url, time=normalise_time(time_text))
 
 
+
+FREE_PRICE = "Free"
+# The category that beat uses for an event with no ticket price.
+FREE_CATEGORY = "Free Events"
+PRICE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def parse_ticket(
+    price: str | None,
+    url: str | None,
+    free: bool = False,
+) -> sources.Ticket | None:
+    """Return the ticket of one card, or None when the card holds no ticket data.
+
+    The beat card names no ticket state. The read reports the price and the
+    link only, so the state stays None and the group is On sale. A card with
+    no price and no link holds no ticket.
+
+    A card in the `Free Events` category holds no price. The caller passes
+    `free` true, and the ticket reads Free. The link stays when the card
+    offers one, because a free event can still have a registration page.
+    """
+    if price == FREE_PRICE or (price is None and free):
+        return sources.Ticket(
+            label=FREE_PRICE,
+            group=sources.TicketGroup.FREE,
+            price=FREE_PRICE,
+            price_min=0.0,
+            price_max=0.0,
+            url=url,
+        )
+    if price is None and url is None:
+        return None
+    match = PRICE_NUMBER_RE.search(price or "")
+    low = float(match.group()) if match is not None else None
+    return sources.Ticket(
+        label=price or "Tickets",
+        group=sources.TicketGroup.ON_SALE,
+        price=price,
+        price_min=low,
+        price_max=low,
+        url=url,
+    )
+
+
 def parse_gigs(html: str) -> list[sources.Gig]:
     soup = BeautifulSoup(html, "lxml")
     gigs = []
@@ -127,6 +172,13 @@ def parse_gigs(html: str) -> list[sources.Gig]:
         location = card.select_one(".gig-location a")
         price = card.select_one(".gig-price")
         ticket = card.select_one(".gig-ticket a")
+        categories = [
+            badge.get_text(strip=True)
+            for badge in card.select(".gig-category .badge")
+        ]
+        price_text = price.get_text(" ", strip=True) if price else None
+        ticket_url = attribute(ticket, "href") if ticket else None
+        free = price_text is None and FREE_CATEGORY in categories
         gigs.append(
             sources.Gig(
                 artist=title.get_text(strip=True),
@@ -139,12 +191,8 @@ def parse_gigs(html: str) -> list[sources.Gig]:
                     badge.get_text(strip=True)
                     for badge in card.select(".gig-genre .badge")
                 ],
-                categories=[
-                    badge.get_text(strip=True)
-                    for badge in card.select(".gig-category .badge")
-                ],
-                price=price.get_text(" ", strip=True) if price else None,
-                ticket_url=attribute(ticket, "href") if ticket else None,
+                categories=categories,
+                ticket=parse_ticket(price_text, ticket_url, free),
                 image_url=attribute(image, "src"),
                 image_alt=attribute(image, "alt"),
             )

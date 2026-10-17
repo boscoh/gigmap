@@ -288,13 +288,13 @@ def test_price_text_prefers_the_override() -> None:
 def test_an_event_fact_row_holds_the_genre_and_the_price() -> None:
     facts = fringe.parse_event_facts(event_row(price=0.0, max_price=0.0))
     assert facts.genres == ["Cabaret"]
-    assert facts.price == "Free"
+    assert facts.price.text == "Free"
 
 
 def test_an_event_fact_row_survives_a_damaged_shape() -> None:
     facts = fringe.parse_event_facts({"id": "e1"})
     assert facts.genres == []
-    assert facts.price is None
+    assert facts.price.text is None
 
 
 def test_a_diary_row_becomes_a_gig() -> None:
@@ -316,10 +316,15 @@ def test_a_diary_row_becomes_a_gig() -> None:
     assert gig.categories == ["Wheelchair Accessible"]
     assert gig.image_url == "https://img.test/1.jpg"
     assert gig.time == "7:00pm"
-    assert gig.price == "$55.00 - $69.00"
+    assert gig.ticket is not None
+    assert gig.ticket.price == "$55.00 - $69.00"
+    assert gig.ticket.price_min == 55.0
+    assert gig.ticket.price_max == 69.0
     # A paid gig carries the booking anchor of the event page.
-    assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
-    assert gig.status == "Available"
+    assert gig.ticket.url == f"{EVENT_URL}#sessions-book-now"
+    assert gig.ticket.state == "Available"
+    assert gig.ticket.label == "$55.00 - $69.00"
+    assert gig.ticket.group == sources.TicketGroup.ON_SALE
 
 
 def test_a_sold_out_row_keeps_the_ticket_state() -> None:
@@ -331,12 +336,52 @@ def test_a_sold_out_row_keeps_the_ticket_state() -> None:
         {"e1": fringe.parse_event_facts(event_row())},
     )
     assert gig is not None
-    assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
-    assert gig.status == "SoldOut"
+    assert gig.ticket is not None
+    assert gig.ticket.url == f"{EVENT_URL}#sessions-book-now"
+    assert gig.ticket.state == "SoldOut"
+    assert gig.ticket.label == "Sold out"
+    assert gig.ticket.group == sources.TicketGroup.UNAVAILABLE
+
+
+def test_a_past_state_reads_as_a_past_event() -> None:
+    gig = fringe.parse_performance(
+        diary_row(status="PastEvent"),
+        "2026-10-17",
+        {},
+        {"e1": fringe.parse_event_facts(event_row())},
+    )
+
+    assert gig is not None
+    assert gig.ticket is not None
+    assert gig.ticket.state == "PastEvent"
+    assert gig.ticket.label == "Past event"
+    assert gig.ticket.group == sources.TicketGroup.UNAVAILABLE
+
+
+def test_an_unknown_state_keeps_the_word_and_the_price() -> None:
+    gig = fringe.parse_performance(
+        diary_row(status="NewState"),
+        "2026-10-17",
+        {},
+        {"e1": fringe.parse_event_facts(event_row())},
+    )
+
+    assert gig is not None
+    assert gig.ticket is not None
+    assert gig.ticket.state == "NewState"
+    assert gig.ticket.label == "$55.00 - $69.00"
+    assert gig.ticket.group == sources.TicketGroup.UNKNOWN
+
+
+def test_every_fringe_state_holds_a_label_and_a_group() -> None:
+    for state in fringe.FringeState:
+        assert state in fringe.STATE_LABEL
+        assert state in fringe.STATE_GROUP
+        assert isinstance(fringe.STATE_GROUP[state], sources.TicketGroup)
 
 
 def test_a_free_row_holds_no_ticket_state() -> None:
-    """The site marks a free unticketed event SoldOut. No ticket, no state."""
+    """The site marks a free unticketed event SoldOut. The state is not real."""
     facts = {
         "e1": fringe.parse_event_facts(event_row(price=0.0, max_price=0.0))
     }
@@ -344,25 +389,32 @@ def test_a_free_row_holds_no_ticket_state() -> None:
         diary_row(status="SoldOut"), "2026-10-17", {}, facts
     )
     assert gig is not None
-    assert gig.price == "Free"
-    assert gig.ticket_url is None
-    assert gig.status is None
+    assert gig.ticket is not None
+    assert gig.ticket.price == "Free"
+    assert gig.ticket.url is None
+    assert gig.ticket.state is None
+    assert gig.ticket.label == "Free"
+    assert gig.ticket.group == sources.TicketGroup.FREE
+    assert gig.ticket.price_min == 0.0
 
 
-def test_a_row_without_a_state_holds_no_status() -> None:
+def test_a_row_without_a_state_holds_no_state() -> None:
     gig = fringe.parse_performance(diary_row(status=None), "2026-10-17", {}, {})
     assert gig is not None
-    assert gig.status is None
+    assert gig.ticket is not None
+    assert gig.ticket.state is None
 
 
 def test_a_gig_without_an_event_row_holds_no_genre_or_price() -> None:
     gig = fringe.parse_performance(diary_row(), "2026-10-17", {}, {})
     assert gig is not None
     assert gig.genres == []
-    assert gig.price is None
+    assert gig.ticket is not None
+    assert gig.ticket.price is None
     assert gig.venue_url is None
     # The price is not known, so the link reads Tickets.
-    assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
+    assert gig.ticket.url == f"{EVENT_URL}#sessions-book-now"
+    assert gig.ticket.label == "Tickets"
 
 
 def test_a_cancelled_or_on_demand_row_is_not_a_gig() -> None:
@@ -453,7 +505,8 @@ def test_the_event_list_answers_every_page(
     event_reads = [f for f in site.filters if "whatsOnEvent" in f]
     assert len(event_reads) == 2
     assert gigs[0].genres == ["Cabaret"]
-    assert gigs[0].price == "$55.00 - $69.00"
+    assert gigs[0].ticket is not None
+    assert gigs[0].ticket.price == "$55.00 - $69.00"
 
 
 def test_the_event_list_reads_one_time_for_the_process() -> None:
@@ -485,7 +538,8 @@ def test_the_source_keeps_a_gig_without_a_genre_or_price_when_the_read_fails(
 
     assert len(gigs) == 1
     assert gigs[0].genres == []
-    assert gigs[0].price is None
+    assert gigs[0].ticket is not None
+    assert gigs[0].ticket.price is None
     assert gigs[0].time == "7:00pm"
 
 

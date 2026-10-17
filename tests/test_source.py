@@ -85,6 +85,70 @@ def test_url_key_uses_the_last_path_segment() -> None:
     assert sources.url_key("https://beat.com.au/") == "page"
 
 
+def test_a_beat_ticket_holds_the_price_and_the_link() -> None:
+    ticket = beat.parse_ticket("$27.78", "https://example.test/buy")
+
+    assert ticket is not None
+    assert ticket.state is None
+    assert ticket.label == "$27.78"
+    assert ticket.group == sources.TicketGroup.ON_SALE
+    assert ticket.price == "$27.78"
+    assert ticket.price_min == 27.78
+    assert ticket.url == "https://example.test/buy"
+
+
+def test_a_beat_ticket_without_a_price_reads_tickets() -> None:
+    ticket = beat.parse_ticket(None, "https://example.test/buy")
+
+    assert ticket is not None
+    assert ticket.label == "Tickets"
+    assert ticket.price_min is None
+
+
+def test_a_beat_card_without_a_price_or_link_holds_no_ticket() -> None:
+    assert beat.parse_ticket(None, None) is None
+
+
+def test_a_free_beat_ticket_sorts_as_zero() -> None:
+    ticket = beat.parse_ticket("Free", None)
+
+    assert ticket is not None
+    assert ticket.group == sources.TicketGroup.FREE
+    assert ticket.price_min == 0.0
+
+
+def test_a_free_beat_ticket_keeps_the_link() -> None:
+    ticket = beat.parse_ticket(None, "https://example.test/free", free=True)
+
+    assert ticket is not None
+    assert ticket.group == sources.TicketGroup.FREE
+    assert ticket.label == "Free"
+    assert ticket.price == "Free"
+    assert ticket.price_min == 0.0
+    assert ticket.url == "https://example.test/free"
+
+
+def test_a_beat_free_category_holds_a_free_ticket() -> None:
+    html = """
+    <div class="events_wrapper">
+      <div class="gig-card">
+        <div class="gig-title"><a href="https://beat.com.au/act/">Act</a></div>
+        <div class="gig-image"><img src="https://beat.com.au/act.jpg" alt="Act"></div>
+        <div class="gig-category"><span class="badge">Free Events</span></div>
+      </div>
+    </div>
+    """
+
+    gigs = beat.parse_gigs(html)
+
+    assert len(gigs) == 1
+    assert gigs[0].ticket is not None
+    assert gigs[0].ticket.group == sources.TicketGroup.FREE
+    assert gigs[0].ticket.label == "Free"
+    assert gigs[0].ticket.price_min == 0.0
+    assert gigs[0].ticket.url is None
+
+
 def test_the_root_page_answers_the_beat_source() -> None:
     assert server.page_source_name("/") == "beat"
     assert server.page_source_name("/nowhere/") == "beat"
@@ -169,9 +233,7 @@ def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -
             "venue_url": VENUE_URL,
             "genres": [],
             "categories": [],
-            "price": None,
-            "status": None,
-            "ticket_url": None,
+            "ticket": None,
             "image_url": None,
             "image_alt": None,
             "time": None,

@@ -8,6 +8,7 @@ The data classes below are the return types of the protocol. `sources.py`
 declares them, so the server and every source agree on one shape.
 """
 
+from enum import Enum
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -34,16 +35,55 @@ class SourceUrlError(SourceError):
     """The source does not accept the url."""
 
 
+class TicketGroup(str, Enum):
+    """The portable urgency of one ticket.
+
+    A source owns its `state` words and its `label` text. The group is the
+    small set that every source maps into, so a consumer can style or filter
+    a ticket without knowledge of the site.
+    """
+
+    ON_SALE = "on_sale"
+    LIMITED = "limited"
+    UNAVAILABLE = "unavailable"
+    FREE = "free"
+    UNKNOWN = "unknown"
+
+
+class Ticket(BaseModel):
+    """The ticket data of one gig, as its source reports it.
+
+    The `state` field holds the source word, for example `SellingFast`. A
+    source owns its set of words, so a second site can use another set. The
+    `label` field holds the text that the source shows for that state, for
+    example `Selling fast`. The `group` field holds the shared value that a
+    consumer uses for style and for filter.
+
+    The `url` field is None when the source offers no booking path, for
+    example a free Fringe event. The `price` field holds the display text.
+    The `price_min` and `price_max` fields hold the numbers for a sort, and
+    are None when the text holds no number.
+    """
+
+    state: str | None = None
+    label: str
+    group: TicketGroup = TicketGroup.UNKNOWN
+    price: str | None = None
+    price_min: float | None = None
+    price_max: float | None = None
+    url: str | None = None
+
+
 class Gig(BaseModel):
     """One gig from a gig guide page.
 
     A scalar field is None when the site does not show the value. A list
     field is empty when the site does not show the value. The `time` field
     comes from the gig detail page, not from the gig guide page.
-    The `status` field holds the ticket state of one performance as the
-    site names it, for example `Available` or `SoldOut`. The field is None
-    when the site names no state, or when the gig holds no booking link and
-    so has no ticket to sell out.
+    The `ticket` field holds the ticket data of one performance. It is None
+    when the site reports no ticket, no price, and no state. A source owns
+    the `state` words and the `label` text of its ticket; the `group` field
+    is the shared value of every source.
     """
 
     artist: str | None = None
@@ -54,9 +94,7 @@ class Gig(BaseModel):
     venue_url: str | None = None
     genres: list[str] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
-    price: str | None = None
-    status: str | None = None
-    ticket_url: str | None = None
+    ticket: Ticket | None = None
     image_url: str | None = None
     image_alt: str | None = None
     time: str | None = None

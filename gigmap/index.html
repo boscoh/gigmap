@@ -757,14 +757,18 @@
                           i.fas.fa-link.text-muted
                   td
                     a.btn.btn-sm(
-                      v-if="gig.ticket_url",
-                      :class="ticketButtonClass(gig)",
-                      :title="gig.status ? gig.price : ''",
-                      :href="gig.ticket_url",
+                      v-if="gig.ticket && gig.ticket.url",
+                      :class="ticketButtonClass(gig.ticket)",
+                      :title="ticketTitle(gig.ticket)",
+                      :href="gig.ticket.url",
                       target="_blank",
                       rel="noopener"
-                    ) {{ ticketLabel(gig) }}
-                    span.text-muted.small(v-if="!gig.ticket_url", :title="gig.status ? gig.price : ''") {{ ticketLabel(gig) }}
+                    ) {{ gig.ticket.label }}
+                    span.small(
+                      v-else-if="gig.ticket",
+                      :class="ticketTextClass(gig.ticket)",
+                      :title="ticketTitle(gig.ticket)"
+                    ) {{ gig.ticket.label }}
 
             .scroll-room
             .text-muted.text-center.py-4(v-if="!gigs.length && !loading && startDate")
@@ -854,32 +858,32 @@
         return words.join(" / ");
     }
 
-    // The Ticket column shows one short value: the ticket state that the
-    // site names, else the price, else the word Tickets. The state is the
-    // state of one performance, so a show can sell out on its own day only.
-    // The price stays in the tooltip when the state hides it.
-    const TICKET_STATES = {
-        SoldOut: "Sold out",
-        SellingFast: "Selling fast",
-        AlmostGone: "Almost gone"
+    // The ticket object reports its own label and its own group. This page
+    // holds one map from the group to the Bootstrap class, so a new site
+    // state needs no change here. The group alone selects the style.
+    const TICKET_STYLE = {
+        on_sale: {button: "btn-outline-primary", text: "text-muted"},
+        limited: {button: "btn-outline-warning", text: "text-warning"},
+        unavailable: {button: "btn-outline-secondary", text: "text-muted"},
+        free: {button: "btn-outline-success", text: "text-success"},
+        unknown: {button: "btn-outline-primary", text: "text-muted"}
     };
 
-    function ticketLabel(gig) {
-        const state = TICKET_STATES[gig.status];
-        if (state) {
-            return state;
-        }
-        return gig.price || (gig.ticket_url ? "Tickets" : "");
+    function ticketStyle(ticket) {
+        return TICKET_STYLE[ticket.group] || TICKET_STYLE.unknown;
     }
 
-    function ticketButtonClass(gig) {
-        if (gig.status === "SoldOut") {
-            return "btn-outline-secondary";
-        }
-        if (TICKET_STATES[gig.status]) {
-            return "btn-outline-warning";
-        }
-        return "btn-outline-primary";
+    function ticketButtonClass(ticket) {
+        return ticketStyle(ticket).button;
+    }
+
+    function ticketTextClass(ticket) {
+        return ticketStyle(ticket).text;
+    }
+
+    // The price stays in the tooltip when the label hides it.
+    function ticketTitle(ticket) {
+        return ticket.label === ticket.price ? "" : (ticket.price || "");
     }
 
     function searchUrl(gig) {
@@ -1169,9 +1173,9 @@
             nextTick(() => scrollToSelectedGig());
         }
 
-        function priceValue(price) {
-            const match = /([0-9]+(?:\.[0-9]+)?)/.exec(String(price || ""));
-            return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+        function priceValue(ticket) {
+            const value = ticket ? ticket.price_min : null;
+            return value == null ? Number.MAX_SAFE_INTEGER : value;
         }
 
         function compareGigs(left, right) {
@@ -1193,7 +1197,7 @@
                 return (timeValue(left.time) - timeValue(right.time)) * direction;
             }
             if (sortKey.value === "price") {
-                return (priceValue(left.price) - priceValue(right.price)) * direction;
+                return (priceValue(left.ticket) - priceValue(right.ticket)) * direction;
             }
             return String(left[sortKey.value] || "").localeCompare(String(right[sortKey.value] || "")) * direction;
         }
@@ -1654,8 +1658,9 @@
             activeVenueUrl,
             formatDate,
             tagLine,
-            ticketLabel,
             ticketButtonClass,
+            ticketTextClass,
+            ticketTitle,
             searchUrl,
             sortKey,
             sortDir,
