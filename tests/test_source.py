@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from gigmap import beat, geocode, server, sources, stores
 
 
+VENUE_URL = "https://beat.com.au/directory/venue/"
+
 class FakeSource:
     """A gig source that answers with saved data."""
 
@@ -19,6 +21,7 @@ class FakeSource:
         self.calls: list[tuple[str, ...]] = []
         self.gig_error: Exception | None = None
         self.venue_error: Exception | None = None
+        self.gig_venue_urls: list[str] = [VENUE_URL]
 
     async def page(self, start_date: str, end_date: str) -> str:
         self.calls.append(("page", start_date, end_date))
@@ -28,7 +31,15 @@ class FakeSource:
         self.calls.append(("gigs", start_date, end_date))
         if self.gig_error is not None:
             raise self.gig_error
-        return [sources.Gig(artist="Act", detail_url="https://beat.com.au/act/")]
+        return [
+            sources.Gig(
+                artist="Act",
+                detail_url="https://beat.com.au/act/",
+                venue="Venue",
+                venue_url=venue_url,
+            )
+            for venue_url in self.gig_venue_urls
+        ]
 
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         self.calls.append(("gig_detail", detail_url))
@@ -147,8 +158,8 @@ def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -
             "detail_url": "https://beat.com.au/act/",
             "date": None,
             "end_date": None,
-            "venue": None,
-            "venue_url": None,
+            "venue": "Venue",
+            "venue_url": VENUE_URL,
             "genres": [],
             "categories": [],
             "price": None,
@@ -193,6 +204,59 @@ def test_venue_route_uses_the_source(
     assert data["name"] == "Venue"
     assert data["latitude"] is None
 
+
+
+def test_the_venue_stream_answers_one_line_for_each_venue(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, _ = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+
+    response = http.get(
+        "/api/venues",
+        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["venue"]["venue_url"] == VENUE_URL
+    assert data["venue"]["name"] == "Venue"
+    assert data["venue"]["latitude"] is None
+
+
+def test_the_venue_stream_reads_a_repeated_venue_one_time(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.gig_venue_urls = [VENUE_URL, VENUE_URL]
+
+    response = http.get(
+        "/api/venues",
+        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
+    )
+
+    assert response.status_code == 200
+    assert fake.calls.count(("venue", VENUE_URL)) == 1
+    assert len(response.text.strip().split("\n")) == 1
+
+
+def test_the_venue_stream_answers_a_line_for_a_failed_venue(
+    client: tuple[TestClient, FakeSource],
+) -> None:
+    http, fake = client
+    fake.venue_error = sources.SourceError("cannot reach beat.com.au")
+
+    response = http.get(
+        "/api/venues",
+        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "venue_url": VENUE_URL,
+        "error": "cannot reach beat.com.au",
+    }
 
 
 def test_a_reversed_range_answers_400(

@@ -47,6 +47,8 @@ GIG_TTL_DAYS = 30
 CLEANUP_INTERVAL_SECONDS = 24 * 3600
 # The detail pages are fetched with a small pool of connections.
 DETAIL_CONCURRENCY = 5
+# The venue reads use the same size of pool.
+VENUE_CONCURRENCY = 5
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -205,6 +207,67 @@ async def gig_times(
             for _ in workers:
                 index, time_text = await queue.get()
                 yield json.dumps({"index": index, "time": time_text}) + "\n"
+        finally:
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+
+def venue_answer(venue: sources.Venue) -> str:
+    """Return the one stream line of a venue."""
+    return json.dumps({"venue": venue.model_dump()}) + "\n"
+
+
+def venue_failure(venue_url: str, error: Exception) -> str:
+    """Return the one stream line of a venue that failed.
+
+    The message of a source error goes to the page, so the page can show
+    the reason. Any other message stays on the server.
+    """
+    if isinstance(error, sources.SourceError):
+        text = str(error)
+    else:
+        text = "the venue lookup failed"
+    return json.dumps({"venue_url": venue_url, "error": text}) + "\n"
+
+
+@router.get("/api/venues")
+async def venue_stream(
+    source: SourceDep,
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+) -> StreamingResponse:
+    """Stream one NDJSON line for each venue of a date range.
+
+    A line holds the venue, or the reason for the failure. The stream
+    starts when the server has the gig list, so the page can add each
+    marker as its venue arrives. The worker pool covers the source read
+    only. The geocoder holds its own rate limit.
+    """
+    validate_dates(start_date, end_date)
+    gigs = await source.gigs(start_date, end_date)
+    # One read for each venue, so a venue of many gigs costs one read.
+    urls = list(dict.fromkeys(gig.venue_url for gig in gigs if gig.venue_url))
+
+    async def lines() -> AsyncIterator[str]:
+        semaphore = asyncio.Semaphore(VENUE_CONCURRENCY)
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        async def worker(url: str) -> None:
+            try:
+                async with semaphore:
+                    venue = await source.venue(url)
+            except Exception as error:
+                await queue.put(venue_failure(url, error))
+                return
+            await queue.put(venue_answer(venue))
+
+        workers = [asyncio.create_task(worker(url)) for url in urls]
+        try:
+            for _ in workers:
+                yield await queue.get()
         finally:
             for task in workers:
                 task.cancel()

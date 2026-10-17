@@ -896,6 +896,28 @@
         return window.api.get("venue", {searchParams, timeout: 60000}).json();
     }
 
+    // Read one NDJSON stream and call `applyLine` with each line.
+    async function readLines(response, applyLine) {
+        if (!response.body) {
+            throw new Error("server sent no response body");
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let done = false;
+        while (!done) {
+            const chunk = await reader.read();
+            done = chunk.done;
+            buffer += decoder.decode(chunk.value, {stream: true});
+            const parts = buffer.split("\n");
+            buffer = parts.pop();
+            for (const line of parts) {
+                applyLine(line);
+            }
+        }
+        applyLine(buffer);
+    }
+
     function setup() {
         const ranges = ref(RANGES);
         const active = ref("");
@@ -921,6 +943,7 @@
             isNarrow.value = event.matches;
         });
         let mapRun = 0;
+        let venueSource = null;
         let loadRun = 0;
         const activeVenueUrl = ref("");
         const venueInfo = new Map();
@@ -1009,7 +1032,7 @@
                 }
                 markers.clear();
             }
-            mapRun += 1;
+            stopVenues();
             markerCount.value = 0;
             activeVenueUrl.value = "";
             venueInfo.clear();
@@ -1057,6 +1080,9 @@
             timesTotal.value = gigs.value.length;
 
             function applyLine(line) {
+                if (runId !== timeRun) {
+                    return;
+                }
                 if (!line.trim()) {
                     return;
                 }
@@ -1074,26 +1100,7 @@
                     timeout: false,
                     signal: timeSource.signal,
                 });
-                if (!response.body) {
-                    throw new Error("server sent no response body");
-                }
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = "";
-                let done = false;
-                while (!done && runId === timeRun) {
-                    const chunk = await reader.read();
-                    done = chunk.done;
-                    buffer += decoder.decode(chunk.value, {stream: true});
-                    const lines = buffer.split("\n");
-                    buffer = lines.pop();
-                    for (const line of lines) {
-                        applyLine(line);
-                    }
-                }
-                if (runId === timeRun) {
-                    applyLine(buffer);
-                }
+                await readLines(response, applyLine);
             } catch (problem) {
                 if (problem.name !== "AbortError") {
                     console.error("time lookup failed", problem);
@@ -1434,35 +1441,71 @@
             map.fitBounds(group.getBounds().pad(0.15));
         }
 
-        async function mapAllVenues() {
+        function stopVenues() {
             mapRun += 1;
+            if (venueSource) {
+                venueSource.abort();
+                venueSource = null;
+            }
+            mapping.value = false;
+        }
+
+        async function mapAllVenues() {
+            stopVenues();
             const runId = mapRun;
-            const urls = [];
+            const urls = new Set();
             for (const gig of gigs.value) {
-                if (gig.venue_url && !urls.includes(gig.venue_url)) {
-                    urls.push(gig.venue_url);
+                if (gig.venue_url) {
+                    urls.add(gig.venue_url);
                 }
             }
+            venueSource = new AbortController();
             mapping.value = true;
             mapped.value = 0;
-            toMap.value = urls.length;
+            toMap.value = urls.size;
             try {
-                // One request at a time. The server holds the geocoder to
-                // one request per second for the same reason.
-                for (const url of urls) {
-                    if (runId !== mapRun) {
+                // One stream for all of the venues. The server reads them
+                // in a small pool, and the geocoder holds its own limit.
+                const response = await window.api.get("venues", {
+                    searchParams: {
+                        start_date: startDate.value,
+                        end_date: endDate.value,
+                    },
+                    timeout: false,
+                    signal: venueSource.signal,
+                });
+                await readLines(response, (line) => {
+                    if (runId !== mapRun || !line.trim()) {
                         return;
                     }
-                    try {
-                        addMarker(await fetchVenue(url));
-                    } catch (problem) {
-                        console.error("venue lookup failed", url, problem);
+                    const update = JSON.parse(line);
+                    if (update.venue) {
+                        addMarker(update.venue);
+                    } else {
+                        console.error("venue lookup failed", update.venue_url, update.error);
                     }
                     mapped.value += 1;
+                });
+                if (runId === mapRun) {
+                    fitVenues();
                 }
-                fitVenues();
+            } catch (problem) {
+                if (problem.name !== "AbortError") {
+                    console.error("venue list failed", problem);
+                }
             } finally {
-                mapping.value = false;
+                if (runId === mapRun) {
+                    venueSource = null;
+                    mapping.value = false;
+                }
+            }
+        }
+
+        function showOnMap(data) {
+            addMarker(data);
+            if (data.latitude && data.longitude && markers.has(data.venue_url)) {
+                map.setView([data.latitude, data.longitude], 16);
+                markers.get(data.venue_url).openPopup();
             }
         }
 
@@ -1487,6 +1530,18 @@
             }
             venueRequest += 1;
             const requestId = venueRequest;
+            // The map load already holds the venue, so a click costs no
+            // request.
+            const cached = venueInfo.get(gig.venue_url);
+            if (cached) {
+                venue.value = {loading: false, data: cached, error: ""};
+                showOnMap(cached);
+                if (row && !touched) {
+                    await nextTick();
+                    alignRowToTop(row);
+                }
+                return;
+            }
             venue.value = {loading: true, data: null, error: ""};
             if (row) {
                 // The summary above the list changed height. Measure after
@@ -1505,11 +1560,7 @@
                     await nextTick();
                     alignRowToTop(row);
                 }
-                addMarker(data);
-                if (data.latitude && data.longitude) {
-                    map.setView([data.latitude, data.longitude], 16);
-                    markers.get(data.venue_url).openPopup();
-                }
+                showOnMap(data);
             } catch (problem) {
                 if (venueRequest === requestId) {
                     const message = `Could not load the venue: ${problem.message}`;
