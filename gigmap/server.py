@@ -50,6 +50,10 @@ DETAIL_CONCURRENCY = 5
 # The venue reads use the same size of pool.
 VENUE_CONCURRENCY = 5
 
+# nginx holds a small stream in its buffers until the source closes it.
+# This header makes nginx pass each line to the page at once.
+STREAM_HEADERS = {"X-Accel-Buffering": "no"}
+
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -212,7 +216,11 @@ async def gig_times(
                 task.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
 
-    return StreamingResponse(lines(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        headers=STREAM_HEADERS,
+    )
 
 
 def venue_answer(venue: sources.Venue) -> str:
@@ -273,7 +281,11 @@ async def venue_stream(
                 task.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
 
-    return StreamingResponse(lines(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        headers=STREAM_HEADERS,
+    )
 
 
 @router.get("/api/venue")

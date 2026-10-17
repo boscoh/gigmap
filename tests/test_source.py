@@ -188,6 +188,24 @@ def test_times_route_streams_the_detail_time(
     assert ("gig_detail", "https://beat.com.au/act/") in fake.calls
 
 
+def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """nginx holds a small stream until the source closes it.
+
+    The response says otherwise with `X-Accel-Buffering`.
+    """
+    http, _ = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    params = {"start_date": "2026-10-01", "end_date": "2026-10-02"}
+
+    times = http.get("/api/times", params=params)
+    venues = http.get("/api/venues", params=params)
+
+    assert times.headers.get("x-accel-buffering") == "no"
+    assert venues.headers.get("x-accel-buffering") == "no"
+
+
 def test_venue_route_uses_the_source(
     client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
 ) -> None:
