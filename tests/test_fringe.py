@@ -325,10 +325,28 @@ def test_a_diary_row_becomes_a_gig() -> None:
 def test_a_sold_out_row_keeps_the_ticket_state() -> None:
     """The state belongs to one performance, so one day can sell out alone."""
     gig = fringe.parse_performance(
-        diary_row(status="SoldOut"), "2026-10-17", {}, {}
+        diary_row(status="SoldOut"),
+        "2026-10-17",
+        {},
+        {"e1": fringe.parse_event_facts(event_row())},
     )
     assert gig is not None
+    assert gig.ticket_url == f"{EVENT_URL}#sessions-book-now"
     assert gig.status == "SoldOut"
+
+
+def test_a_free_row_holds_no_ticket_state() -> None:
+    """The site marks a free unticketed event SoldOut. No ticket, no state."""
+    facts = {
+        "e1": fringe.parse_event_facts(event_row(price=0.0, max_price=0.0))
+    }
+    gig = fringe.parse_performance(
+        diary_row(status="SoldOut"), "2026-10-17", {}, facts
+    )
+    assert gig is not None
+    assert gig.price == "Free"
+    assert gig.ticket_url is None
+    assert gig.status is None
 
 
 def test_a_row_without_a_state_holds_no_status() -> None:

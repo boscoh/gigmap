@@ -42,7 +42,8 @@ class Gig(BaseModel):
     comes from the gig detail page, not from the gig guide page.
     The `status` field holds the ticket state of one performance as the
     site names it, for example `Available` or `SoldOut`. The field is None
-    when the site names no state.
+    when the site names no state, or when the gig holds no booking link and
+    so has no ticket to sell out.
     """
 
     artist: str | None = None

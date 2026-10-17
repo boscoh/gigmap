@@ -65,6 +65,14 @@ list shows each performance. That anchor is the value of `ticket_url`.
 A free gig holds no link. Every other gig holds the link, even when the
 price is not known, so the reader can open the sessions list.
 
+The ticket state
+
+Each performance row of the diary holds a `status`. The value is
+`Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. The site marks a
+free unticketed event with `SoldOut` as well. That event holds no ticket
+to sell out, so the state belongs to a gig with a booking link only. A
+free gig then reads `Free`.
+
 The shapes
 
 One gig is one performance, not one event. The site has no page for one
@@ -387,8 +395,9 @@ def parse_performance(
     of another day is dropped as well, so the day of a gig is exact.
 
     The `status` of the performance holds the ticket state of that day, for
-    example `Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. The gig
-    keeps the state, so the reader can see a sold-out show.
+    example `Available`, `SellingFast`, `AlmostGone`, or `SoldOut`. A free
+    event holds no booking link and no ticket to sell out, so the gig keeps
+    the state only with a booking link, and a free gig reads Free.
     """
     performance = row.get("performance")
     if not isinstance(performance, dict):
@@ -407,6 +416,7 @@ def parse_performance(
     image_url = image.get("imageUrl") if isinstance(image, dict) else None
     detail_url = event_page_url(row.get("route"))
     price = facts.price if facts is not None else None
+    ticket_url = ticket_link(detail_url, price)
     return sources.Gig(
         artist=text(row.get("name")),
         detail_url=detail_url,
@@ -416,8 +426,10 @@ def parse_performance(
         genres=list(facts.genres) if facts is not None else [],
         categories=accessibility_names(row.get("accessibilities")),
         price=price,
-        status=text(performance.get("status")),
-        ticket_url=ticket_link(detail_url, price),
+        # A gig with no booking link has no ticket, so the site state of
+        # an unticketed free event does not belong to the gig.
+        status=text(performance.get("status")) if ticket_url else None,
+        ticket_url=ticket_url,
         image_url=text(image_url),
         time=local_time_text(stamp),
     )
