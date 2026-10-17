@@ -1404,7 +1404,9 @@
             if (isNarrow.value) {
                 scrollRowToTop(row);
             } else {
-                row.scrollIntoView({block: "nearest", behavior: "smooth"});
+                // The sticky header sits above the row. Align below it, so
+                // the row does not land under the header.
+                alignRowToTop(row);
             }
         }
 
