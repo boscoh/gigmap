@@ -17,12 +17,13 @@
   <!-- prevent auto-zooming on mobile browsers -->
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-  <!-- The server fills these from the source and the mount prefix. -->
+  <!-- The server fills these from the source and its API path. -->
   <title>__SOURCE_TITLE__</title>
   <script>
       window.SOURCE = __SOURCE_INFO__;
-      // The path of this source. "" at "/", "/fringe" at "/fringe".
-      window.API_PREFIX = "__API_PREFIX__";
+      // The API path of this source: "/api/beat" at "/",
+      // "/api/fringe" at "/fringe/".
+      window.API_BASE = "__API_BASE__";
   </script>
 
   <!-- Bootstrap -->
@@ -83,7 +84,7 @@
       }
 
       window.api = ky.create({
-          prefix: `${window.API_PREFIX}/api`,
+          prefix: window.API_BASE,
           hooks: {
               beforeError: [
                   async ({error}) => {
@@ -896,26 +897,32 @@
         return window.api.get("venue", {searchParams, timeout: 60000}).json();
     }
 
-    // Read one NDJSON stream and call `applyLine` with each line.
-    async function readLines(response, applyLine) {
+    // Yield one NDJSON line at a time from a streaming response.
+    async function* readNdjsonLines(response) {
         if (!response.body) {
             throw new Error("server sent no response body");
         }
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let done = false;
-        while (!done) {
-            const chunk = await reader.read();
-            done = chunk.done;
-            buffer += decoder.decode(chunk.value, {stream: true});
-            const parts = buffer.split("\n");
-            buffer = parts.pop();
-            for (const line of parts) {
-                await applyLine(line);
+        try {
+            let done = false;
+            while (!done) {
+                const chunk = await reader.read();
+                done = chunk.done;
+                buffer += decoder.decode(chunk.value, {stream: true});
+                const parts = buffer.split("\n");
+                buffer = parts.pop();
+                yield* parts;
             }
+            if (buffer) {
+                yield buffer;
+            }
+        } finally {
+            // Runs on a normal end and on `break`, so a stopped
+            // consumer frees the socket.
+            await reader.cancel().catch(() => {});
         }
-        await applyLine(buffer);
     }
 
     // Wait for the browser to paint the last change.
@@ -927,6 +934,17 @@
             }
             requestAnimationFrame(() => resolve());
         });
+    }
+
+    // Parse one NDJSON line. None when the line is not complete JSON,
+    // which happens when the connection dies in the middle of a line.
+    function parseLine(line) {
+        try {
+            return JSON.parse(line);
+        } catch (problem) {
+            console.error("bad stream line", line, problem);
+            return null;
+        }
     }
 
     function setup() {
@@ -1090,28 +1108,29 @@
             timesLoaded.value = 0;
             timesTotal.value = gigs.value.length;
 
-            function applyLine(line) {
-                if (runId !== timeRun) {
-                    return;
-                }
-                if (!line.trim()) {
-                    return;
-                }
-                const update = JSON.parse(line);
-                const gig = gigs.value[update.index];
-                if (gig) {
-                    gig.time = update.time;
-                    timesLoaded.value += 1;
-                }
-            }
-
             try {
                 const response = await window.api.get("times", {
                     searchParams,
                     timeout: false,
                     signal: timeSource.signal,
                 });
-                await readLines(response, applyLine);
+                for await (const line of readNdjsonLines(response)) {
+                    if (runId !== timeRun) {
+                        break;
+                    }
+                    if (!line.trim()) {
+                        continue;
+                    }
+                    const update = parseLine(line);
+                    if (update === null) {
+                        continue;
+                    }
+                    const gig = gigs.value[update.index];
+                    if (gig) {
+                        gig.time = update.time;
+                        timesLoaded.value += 1;
+                    }
+                }
             } catch (problem) {
                 if (problem.name !== "AbortError") {
                     console.error("time lookup failed", problem);
@@ -1232,6 +1251,9 @@
         }
 
         function addMarker(data) {
+            // Hold every venue, so a click costs no request, even when the
+            // venue has no place on the map.
+            venueInfo.set(data.venue_url, data);
             if (!map || !data.latitude || !data.longitude) {
                 return;
             }
@@ -1251,7 +1273,6 @@
             marker.bindPopup(popup);
             marker.on("click", () => focusVenue(data.venue_url));
             markers.set(data.venue_url, marker);
-            venueInfo.set(data.venue_url, data);
             markerCount.value = markers.size;
         }
 
@@ -1485,11 +1506,17 @@
                     timeout: false,
                     signal: venueSource.signal,
                 });
-                await readLines(response, async (line) => {
-                    if (runId !== mapRun || !line.trim()) {
-                        return;
+                for await (const line of readNdjsonLines(response)) {
+                    if (runId !== mapRun) {
+                        break;
                     }
-                    const update = JSON.parse(line);
+                    if (!line.trim()) {
+                        continue;
+                    }
+                    const update = parseLine(line);
+                    if (update === null) {
+                        continue;
+                    }
                     if (update.venue) {
                         addMarker(update.venue);
                     } else {
@@ -1499,7 +1526,7 @@
                     // Let the browser paint, so the markers appear one
                     // at a time, even when one chunk holds many venues.
                     await nextPaint();
-                });
+                }
                 if (runId === mapRun) {
                     fitVenues();
                 }

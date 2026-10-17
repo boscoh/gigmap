@@ -24,10 +24,11 @@ ROOT_DIR = PACKAGE_DIR.parent
 DATA_DIR_ENV = "GIGMAP_DATA_DIR"
 SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
 SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
-SOURCE_API_PREFIX_TOKEN = "__API_PREFIX__"
+SOURCE_API_BASE_TOKEN = "__API_BASE__"
 
-# One server answers both sites. `/` is the beat site, and each source also
-# has a prefix of its own name, so `/fringe` is the Fringe site.
+# One server answers both sites. `/` is the page of the beat site, and
+# each other source has a page prefix of its own name, so `/fringe` is
+# the Fringe page. The reads of every source sit at `/api/<source>`.
 ROOT_SOURCE_NAME = "beat"
 SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "beat": beat.BeatSource,
@@ -77,7 +78,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=SOURCE.title, lifespan=lifespan)
-router = APIRouter()
+page_router = APIRouter()
+api_router = APIRouter()
 
 
 def first_segment(path: str) -> str:
@@ -85,27 +87,40 @@ def first_segment(path: str) -> str:
     return path.strip("/").split("/", 1)[0].lower()
 
 
-def source_name_of(path: str) -> str:
-    """Return the name of the source that answers one path.
+def page_source_name(path: str) -> str:
+    """Return the name of the source of one page path.
 
-    The app serves each source at its own prefix, so `/fringe/api/gigs`
-    answers from the Fringe source. A path without a source prefix, such as
-    `/api/gigs`, answers from the beat source, which is the site at the
-    root.
+    The app serves each page at the path of its source, so `/fringe/`
+    answers from the Fringe source. The root path `/` answers from the
+    beat source, which is the site at the root.
     """
     name = first_segment(path)
     return name if name in SOURCE_FACTORIES else ROOT_SOURCE_NAME
 
 
-def source_prefix(path: str) -> str:
-    """Return the mount prefix of one path. The root path answers none."""
-    name = first_segment(path)
-    return f"/{name}" if name in SOURCE_FACTORIES else ""
+def api_source_name(path: str) -> str:
+    """Return the name of the source of one API path.
+
+    The reads sit at `/api/<source>/<read>`, so `/api/fringe/gigs`
+    answers from the Fringe source. An unknown source is a 404, so a
+    wrong name never answers from another site.
+    """
+    parts = path.strip("/").split("/")
+    if len(parts) >= 2 and parts[0].lower() == "api":
+        name = parts[1].lower()
+        if name in SOURCE_FACTORIES:
+            return name
+    raise HTTPException(status_code=404, detail="unknown source")
+
+
+def api_prefix(name: str) -> str:
+    """Return the API path prefix of one source."""
+    return f"/api/{name}"
 
 
 async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource]:
     """Give one cached source for the request, then close it."""
-    name = source_name_of(request.url.path)
+    name = api_source_name(request.url.path)
     async with SOURCE_FACTORIES[name]() as site:
         yield stores.CachedSource(site, stores.DataStores(data_dir, name))
 
@@ -144,15 +159,18 @@ def validate_dates(start_date: str, end_date: str) -> None:
         )
 
 
-@router.get("/")
+@page_router.get("/")
 async def index(request: Request) -> HTMLResponse:
     """Serve the page of one source, with its details filled in."""
     path = request.url.path
-    info = SOURCE_INFO[source_name_of(path)]
+    name = page_source_name(path)
+    info = SOURCE_INFO[name]
     html = (PACKAGE_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace(SOURCE_TITLE_TOKEN, info.title)
     html = html.replace(SOURCE_INFO_TOKEN, info.model_dump_json())
-    return HTMLResponse(html.replace(SOURCE_API_PREFIX_TOKEN, source_prefix(path)))
+    return HTMLResponse(
+        html.replace(SOURCE_API_BASE_TOKEN, api_prefix(name))
+    )
 
 
 async def gig_time(
@@ -172,7 +190,7 @@ async def gig_time(
     return data.time if data is not None else None
 
 
-@router.get("/api/gigs")
+@api_router.get("/gigs")
 async def gig_list(
     source: SourceDep,
     start_date: str = Query(...),
@@ -182,7 +200,7 @@ async def gig_list(
     return await source.gigs(start_date, end_date)
 
 
-@router.get("/api/times")
+@api_router.get("/times")
 async def gig_times(
     source: SourceDep,
     start_date: str = Query(...),
@@ -241,7 +259,7 @@ def venue_failure(venue_url: str, error: Exception) -> str:
     return json.dumps({"venue_url": venue_url, "error": text}) + "\n"
 
 
-@router.get("/api/venues")
+@api_router.get("/venues")
 async def venue_stream(
     source: SourceDep,
     start_date: str = Query(...),
@@ -288,27 +306,29 @@ async def venue_stream(
     )
 
 
-@router.get("/api/venue")
+@api_router.get("/venue")
 async def venue(source: SourceDep, venue_url: str = Query(...)) -> sources.Venue:
     return await source.venue(venue_url)
 
 
-def mount_sources(application: FastAPI, routes: APIRouter) -> None:
+def mount_sources(
+    application: FastAPI, pages: APIRouter, reads: APIRouter
+) -> None:
     """Serve the page and the reads of each source.
 
-    `/` answers the beat site. `/fringe` answers the Fringe site. Each
-    source keeps its page and its reads together, so the reads of the
-    Fringe site are at `/fringe/api/gigs`.
+    `/` answers the beat page and `/fringe/` answers the Fringe page.
+    The reads of a source sit at `/api/<source>/`, so the Fringe reads
+    are at `/api/fringe/gigs`.
     """
-    application.include_router(routes)
-    for source_name in SOURCE_FACTORIES:
-        # The root site is the beat site, so it needs no second prefix.
-        if source_name == ROOT_SOURCE_NAME:
+    application.include_router(pages)
+    for name in SOURCE_FACTORIES:
+        application.include_router(reads, prefix=api_prefix(name))
+        # The root site is the beat site, so it needs no page prefix.
+        if name == ROOT_SOURCE_NAME:
             continue
-        application.include_router(routes, prefix=f"/{source_name}")
+        application.include_router(pages, prefix=f"/{name}")
 
-
-mount_sources(app, router)
+mount_sources(app, page_router, api_router)
 cli = App(
     name="gigmap",
     help="The Melbourne gig guide server.",

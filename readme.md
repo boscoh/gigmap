@@ -71,13 +71,16 @@ One server answers both sites. The path says which site:
 | `/` | beat.com.au | one gig card of the guide |
 | `/fringe/` | melbournefringe.com.au | one performance of the festival |
 
-The reads of a site sit under its own path, so the page and its data stay
-together:
+The reads of a site sit at `/api/<source>/`, so every site has the same
+shape:
 
 ```
-/            /api/gigs           beat.com.au
-/fringe/     /fringe/api/gigs    melbournefringe.com.au
+/          /api/beat/*      beat.com.au
+/fringe/   /api/fringe/*    melbournefringe.com.au
 ```
+
+An unknown source is a 404, so a wrong name never answers from another
+site.
 
 Each site keeps its own cache files, so one site never answers for the
 other.

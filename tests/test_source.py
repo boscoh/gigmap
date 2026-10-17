@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 from curl_cffi import requests as curl_requests
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from gigmap import beat, geocode, server, sources, stores
@@ -84,25 +85,31 @@ def test_url_key_uses_the_last_path_segment() -> None:
     assert sources.url_key("https://beat.com.au/") == "page"
 
 
-def test_the_root_path_answers_the_beat_source() -> None:
-    assert server.source_name_of("/") == "beat"
-    assert server.source_name_of("/api/gigs") == "beat"
+def test_the_root_page_answers_the_beat_source() -> None:
+    assert server.page_source_name("/") == "beat"
+    assert server.page_source_name("/nowhere/") == "beat"
 
 
-def test_a_source_prefix_answers_that_source() -> None:
-    assert server.source_name_of("/fringe/") == "fringe"
-    assert server.source_name_of("/fringe/api/gigs") == "fringe"
+def test_a_page_prefix_answers_that_source() -> None:
+    assert server.page_source_name("/fringe/") == "fringe"
+    assert server.page_source_name("/fringe") == "fringe"
 
 
-def test_an_unknown_prefix_answers_the_root_source() -> None:
-    assert server.source_name_of("/nowhere/api/gigs") == "beat"
+def test_an_api_path_answers_its_source() -> None:
+    assert server.api_source_name("/api/beat/gigs") == "beat"
+    assert server.api_source_name("/api/fringe/gigs") == "fringe"
+    assert server.api_source_name("/api/fringe") == "fringe"
 
 
-def test_the_source_prefix_of_a_path() -> None:
-    assert server.source_prefix("/") == ""
-    assert server.source_prefix("/api/gigs") == ""
-    assert server.source_prefix("/fringe/api/gigs") == "/fringe"
+def test_an_unknown_api_source_is_not_a_source() -> None:
+    for path in ("/api/gigs", "/api/nothing/gigs", "/gigs"):
+        with pytest.raises(HTTPException):
+            server.api_source_name(path)
 
+
+def test_the_api_prefix_of_a_source() -> None:
+    assert server.api_prefix("beat") == "/api/beat"
+    assert server.api_prefix("fringe") == "/api/fringe"
 
 def test_each_site_serves_its_own_page_and_reads(
     client: tuple[TestClient, FakeSource],
@@ -114,10 +121,10 @@ def test_each_site_serves_its_own_page_and_reads(
 
     assert root.status_code == 200
     assert '<title>Melb Gig Map</title>' in root.text
-    assert 'window.API_PREFIX = "";' in root.text
+    assert 'window.API_BASE = "/api/beat";' in root.text
     assert fringe.status_code == 200
     assert '<title>Melb Fringe Gig Map</title>' in fringe.text
-    assert 'window.API_PREFIX = "/fringe";' in fringe.text
+    assert 'window.API_BASE = "/api/fringe";' in fringe.text
 
 
 def test_a_read_answers_on_the_fringe_path(
@@ -126,7 +133,7 @@ def test_a_read_answers_on_the_fringe_path(
     http, fake = client
 
     response = http.get(
-        "/fringe/api/gigs",
+        "/api/fringe/gigs",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -147,7 +154,7 @@ def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -
     http, fake = client
 
     response = http.get(
-        "/api/gigs",
+        "/api/beat/gigs",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -179,7 +186,7 @@ def test_times_route_streams_the_detail_time(
     http, fake = client
 
     response = http.get(
-        "/api/times",
+        "/api/beat/times",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -199,8 +206,8 @@ def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
     monkeypatch.setattr(geocode, "geocode_venue", _no_place)
     params = {"start_date": "2026-10-01", "end_date": "2026-10-02"}
 
-    times = http.get("/api/times", params=params)
-    venues = http.get("/api/venues", params=params)
+    times = http.get("/api/beat/times", params=params)
+    venues = http.get("/api/beat/venues", params=params)
 
     assert times.headers.get("x-accel-buffering") == "no"
     assert venues.headers.get("x-accel-buffering") == "no"
@@ -213,7 +220,7 @@ def test_venue_route_uses_the_source(
     monkeypatch.setattr(geocode, "geocode_venue", _no_place)
 
     response = http.get(
-        "/api/venue",
+        "/api/beat/venue",
         params={"venue_url": "https://beat.com.au/directory/venue/"},
     )
 
@@ -231,7 +238,7 @@ def test_the_venue_stream_answers_one_line_for_each_venue(
     monkeypatch.setattr(geocode, "geocode_venue", _no_place)
 
     response = http.get(
-        "/api/venues",
+        "/api/beat/venues",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -250,7 +257,7 @@ def test_the_venue_stream_reads_a_repeated_venue_one_time(
     fake.gig_venue_urls = [VENUE_URL, VENUE_URL]
 
     response = http.get(
-        "/api/venues",
+        "/api/beat/venues",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -266,7 +273,7 @@ def test_the_venue_stream_answers_a_line_for_a_failed_venue(
     fake.venue_error = sources.SourceError("cannot reach beat.com.au")
 
     response = http.get(
-        "/api/venues",
+        "/api/beat/venues",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -283,7 +290,7 @@ def test_a_reversed_range_answers_400(
     http, fake = client
 
     response = http.get(
-        "/api/gigs",
+        "/api/beat/gigs",
         params={"start_date": "2026-10-19", "end_date": "2026-10-17"},
     )
 
@@ -297,7 +304,7 @@ def test_a_damaged_date_answers_400(
     http, fake = client
 
     response = http.get(
-        "/api/gigs",
+        "/api/beat/gigs",
         params={"start_date": "17/10/2026", "end_date": "2026-10-17"},
     )
 
@@ -308,7 +315,7 @@ def test_a_bad_url_answers_400(client: tuple[TestClient, FakeSource]) -> None:
     http, fake = client
     fake.venue_error = sources.SourceUrlError("bad url")
 
-    response = http.get("/api/venue", params={"venue_url": "https://x.test/y/"})
+    response = http.get("/api/beat/venue", params={"venue_url": "https://x.test/y/"})
 
     assert response.status_code == 400
     assert response.json() == {"detail": "bad url"}
@@ -319,7 +326,7 @@ def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> No
     fake.gig_error = sources.SourceError("cannot reach beat.com.au")
 
     response = http.get(
-        "/api/gigs",
+        "/api/beat/gigs",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
