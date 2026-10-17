@@ -97,6 +97,15 @@ def test_a_beat_ticket_holds_the_price_and_the_link() -> None:
     assert ticket.url == "https://example.test/buy"
 
 
+def test_a_beat_price_range_holds_both_numbers() -> None:
+    ticket = beat.parse_ticket("$21.00 - 40.00", None)
+
+    assert ticket is not None
+    assert ticket.label == "$21.00 - 40.00"
+    assert ticket.price_min == 21.0
+    assert ticket.price_max == 40.0
+
+
 def test_a_beat_ticket_without_a_price_reads_tickets() -> None:
     ticket = beat.parse_ticket(None, "https://example.test/buy")
 

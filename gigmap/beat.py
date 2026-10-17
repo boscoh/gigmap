@@ -135,6 +135,8 @@ def parse_ticket(
     A card in the `Free Events` category holds no price. The caller passes
     `free` true, and the ticket reads Free. The link stays when the card
     offers one, because a free event can still have a registration page.
+    The price text can hold a range, so the low and high values come from
+    the numbers in the text.
     """
     if price == FREE_PRICE or (price is None and free):
         return sources.Ticket(
@@ -147,14 +149,15 @@ def parse_ticket(
         )
     if price is None and url is None:
         return None
-    match = PRICE_NUMBER_RE.search(price or "")
-    low = float(match.group()) if match is not None else None
+    numbers = [float(value) for value in PRICE_NUMBER_RE.findall(price or "")]
+    low = min(numbers) if numbers else None
+    high = max(numbers) if numbers else None
     return sources.Ticket(
         label=price or "Tickets",
         group=sources.TicketGroup.ON_SALE,
         price=price,
         price_min=low,
-        price_max=low,
+        price_max=high,
         url=url,
     )
 
