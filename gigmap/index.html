@@ -912,10 +912,21 @@
             const parts = buffer.split("\n");
             buffer = parts.pop();
             for (const line of parts) {
-                applyLine(line);
+                await applyLine(line);
             }
         }
-        applyLine(buffer);
+        await applyLine(buffer);
+    }
+
+    // Wait for the browser to paint the last change.
+    function nextPaint() {
+        return new Promise((resolve) => {
+            if (document.hidden) {
+                resolve();
+                return;
+            }
+            requestAnimationFrame(() => resolve());
+        });
     }
 
     function setup() {
@@ -1474,7 +1485,7 @@
                     timeout: false,
                     signal: venueSource.signal,
                 });
-                await readLines(response, (line) => {
+                await readLines(response, async (line) => {
                     if (runId !== mapRun || !line.trim()) {
                         return;
                     }
@@ -1485,6 +1496,9 @@
                         console.error("venue lookup failed", update.venue_url, update.error);
                     }
                     mapped.value += 1;
+                    // Let the browser paint, so the markers appear one
+                    // at a time, even when one chunk holds many venues.
+                    await nextPaint();
                 });
                 if (runId === mapRun) {
                     fitVenues();
