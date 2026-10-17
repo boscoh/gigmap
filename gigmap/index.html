@@ -559,7 +559,7 @@
           .d-flex.gap-3.mt-3.align-items-start
             .summary.flex-grow-1.overflow-hidden
               template(v-if="isNarrow")
-                h1.mb-0.text-nowrap
+                h1.mb-0
                   | ${SOURCE.title}
                 .text-muted
                   = "data "
@@ -1127,6 +1127,9 @@
                 sortKey.value = key;
                 sortDir.value = "asc";
             }
+            // A sort moves the selected row. Bring it back into view after
+            // Vue writes the new order.
+            nextTick(() => scrollToSelectedGig());
         }
 
         function priceValue(price) {
@@ -1380,6 +1383,28 @@
                     row.scrollIntoView({block: "center", behavior: "smooth"});
                 }
                 return;
+            }
+        }
+
+        // After a sort, bring the selected gig back into the list box.
+        function scrollToSelectedGig() {
+            const gig = selectedGig.value;
+            const scroller = document.querySelector(".gig-scroll");
+            if (!gig || !scroller) {
+                return;
+            }
+            const index = visibleRows.value.indexOf(gig);
+            if (index < 0) {
+                return;
+            }
+            const row = scroller.querySelectorAll("tbody tr")[index];
+            if (!row) {
+                return;
+            }
+            if (isNarrow.value) {
+                scrollRowToTop(row);
+            } else {
+                row.scrollIntoView({block: "nearest", behavior: "smooth"});
             }
         }
 
