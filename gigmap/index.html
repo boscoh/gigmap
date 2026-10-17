@@ -1469,12 +1469,56 @@
             scrollToVenue(venueUrl);
         }
 
+        // The map eases out to the markers as they arrive. A gesture from the
+        // user stops that, so the view stays where it is.
+        let viewStopped = false;
+        let lastFit = 0;
+
+        // The view that the markers ask for. A fit of one venue has a point
+        // for bounds, and Leaflet then goes to the deepest zoom, so the zoom
+        // is capped and the first marker does not open on one street.
+        function venueView() {
+            const group = L.featureGroup([...markers.values()]);
+            const bounds = group.getBounds().pad(0.15);
+            return {
+                center: bounds.getCenter(),
+                zoom: Math.min(map.getBoundsZoom(bounds), 15),
+            };
+        }
+
         function fitVenues() {
             if (markers.size === 0) {
                 return;
             }
-            const group = L.featureGroup([...markers.values()]);
-            map.fitBounds(group.getBounds().pad(0.15));
+            const view = venueView();
+            map.setView(view.center, view.zoom);
+        }
+
+        function stopFitting() {
+            viewStopped = true;
+        }
+
+        // A fit makes none of these gestures, so each one is the user.
+        // The one finger touch pan comes as dragstart.
+        function watchGestures() {
+            map.on("dragstart dblclick", stopFitting);
+            const container = map.getContainer();
+            container.addEventListener("wheel", stopFitting, {passive: true});
+            container.addEventListener(
+                "touchstart",
+                (event) => {
+                    if (event.touches.length > 1) {
+                        stopFitting();
+                    }
+                },
+                {passive: true},
+            );
+            // The zoom buttons sit inside the map.
+            container.addEventListener("click", (event) => {
+                if (event.target.closest(".leaflet-control-zoom")) {
+                    stopFitting();
+                }
+            });
         }
 
         function stopVenues() {
@@ -1489,6 +1533,8 @@
         async function mapAllVenues() {
             stopVenues();
             const runId = mapRun;
+            viewStopped = false;
+            lastFit = 0;
             const urls = new Set();
             for (const gig of gigs.value) {
                 if (gig.venue_url) {
@@ -1530,8 +1576,16 @@
                     // Let the browser paint, so the markers appear one
                     // at a time, even when one chunk holds many venues.
                     await nextPaint();
+                    // Ease the view to the markers so far. Five moves a
+                    // second keep the zoom smooth, and a slow stream
+                    // still shows each step.
+                    const now = performance.now();
+                    if (!viewStopped && now - lastFit >= 200) {
+                        lastFit = now;
+                        fitVenues();
+                    }
                 }
-                if (runId === mapRun) {
+                if (runId === mapRun && !viewStopped) {
                     fitVenues();
                 }
             } catch (problem) {
@@ -1620,6 +1674,7 @@
 
         onMounted(() => {
             map = L.map("map").setView(MELBOURNE, 11);
+            watchGestures();
             L.tileLayer(TILE_URL, {
                 maxZoom: 19,
                 attribution: TILE_ATTRIBUTION,
