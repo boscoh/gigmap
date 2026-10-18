@@ -663,7 +663,7 @@
           .small.venue-address(v-if="venue.data && venue.data.address")
             | {{ venue.data.address }}
         .gig-frame(:class="frameClass")
-          .gig-scroll.flex-grow-1(style="min-height: 0", @scroll="updateScrollEdges")
+          .gig-scroll.flex-grow-1(style="min-height: 0", @scroll="syncScroll")
 
             .alert.alert-danger(v-if="error")
               | {{ error }}
@@ -1072,7 +1072,7 @@
             mapped.value = 0;
             toMap.value = 0;
             stopTimes();
-            scrollRoom(0);
+            list.setRoom(0);
             try {
                 const data = await fetchGigs(startDate.value, endDate.value);
                 if (runId !== loadRun) {
@@ -1210,7 +1210,7 @@
         });
 
         const visibleRows = computed(() => (loading.value ? [] : visibleGigs.value));
-        watch([visibleRows, loading], () => nextTick(updateScrollEdges));
+        watch([visibleRows, loading], () => nextTick(syncScroll));
 
         const busy = computed(() => loading.value || timing.value || mapping.value);
 
@@ -1287,32 +1287,41 @@
             "has-below": scrollEdges.value.below,
         }));
 
-        function updateScrollEdges() {
-            const scroller = document.querySelector(".gig-scroll");
-            if (!scroller) {
+        // One place for every list scroll. A reveal moves the list box, opens
+        // the room below the table, and moves the page in the narrow layout, so
+        // the row stays in view under the venue bar.
+        const page = document.scrollingElement || document.documentElement;
+        const smoothScroll = "scrollBehavior" in document.documentElement.style;
+
+        // Move one scroll owner to a value. A smooth move corrects itself when
+        // it stops, because iOS Safari can drop it during a momentum scroll.
+        function moveScroll(owner, top) {
+            const target = Math.round(top);
+            if (!smoothScroll) {
+                owner.scrollTop = target;
                 return;
             }
-            const above = scroller.scrollTop > 1;
-            const below = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
-            if (above !== scrollEdges.value.above || below !== scrollEdges.value.below) {
-                scrollEdges.value = {above, below};
-            }
+            owner.scrollTo({top: target, behavior: "smooth"});
+            const view = owner === page ? window : owner;
+            let timer = 0;
+            const stop = () => {
+                view.removeEventListener("scrollend", check);
+                view.removeEventListener("touchstart", stop);
+                clearTimeout(timer);
+            };
+            const check = () => {
+                stop();
+                if (Math.abs(owner.scrollTop - target) > 2) {
+                    owner.scrollTop = target;
+                }
+            };
+            view.addEventListener("scrollend", check);
+            view.addEventListener("touchstart", stop, {passive: true});
+            timer = setTimeout(stop, 1500);
         }
-
-        function scrollRoom(pixels) {
-            // Only the narrow layout needs room below the last row.
-            const room = document.querySelector(".scroll-room");
-            if (room) {
-                room.style.height = isNarrow.value ? `${Math.max(0, pixels)}px` : "0px";
-            }
-            updateScrollEdges();
-        }
-
-        const smoothScroll =
-            "scrollBehavior" in document.documentElement.style;
 
         // A touch after the tap means the reader moved the list. Do not move
-        // the list again after the venue lookup in that case.
+        // the list again for that reader.
         let touched = false;
         window.addEventListener(
             "touchstart",
@@ -1322,134 +1331,136 @@
             {passive: true},
         );
 
-        function scrollContainer(element, top) {
-            const target = Math.round(top);
-            if (!smoothScroll) {
-                element.scrollTop = target;
-                return;
-            }
-            element.scrollTo({top: target, behavior: "smooth"});
-            // iOS Safari can discard a programmatic scroll while a momentum
-            // scroll runs. Correct the value when the scroll stops.
-            let timer = 0;
-            const stop = () => {
-                element.removeEventListener("scrollend", check);
-                element.removeEventListener("touchstart", stop);
-                clearTimeout(timer);
-            };
-            const check = () => {
-                stop();
-                if (Math.abs(element.scrollTop - target) > 2) {
-                    element.scrollTop = target;
+        const list = {
+            box() {
+                return document.querySelector(".gig-scroll");
+            },
+            edges() {
+                const box = this.box();
+                if (!box) {
+                    return;
                 }
-            };
-            element.addEventListener("scrollend", check);
-            element.addEventListener("touchstart", stop, {passive: true});
-            timer = setTimeout(stop, 1500);
-        }
+                const above = box.scrollTop > 1;
+                const below = box.scrollTop + box.clientHeight < box.scrollHeight - 1;
+                if (above !== scrollEdges.value.above || below !== scrollEdges.value.below) {
+                    scrollEdges.value = {above, below};
+                }
+            },
+            // Only the narrow layout needs room below the last row, because it
+            // puts a row at the first line of a box that the page shows.
+            setRoom(pixels) {
+                const room = document.querySelector(".scroll-room");
+                if (room) {
+                    room.style.height = isNarrow.value ? `${Math.max(0, pixels)}px` : "0px";
+                }
+                this.edges();
+            },
+            // The sticky header covers the top of the list box, so a top
+            // alignment measures from the bottom edge of the header.
+            rowTop(row, box) {
+                const head = box.querySelector("thead");
+                const headHeight = head ? head.getBoundingClientRect().height : 0;
+                return row.getBoundingClientRect().top - box.getBoundingClientRect().top - headHeight;
+            },
+            // The room below the table lets the last row reach the top.
+            // Measure the table alone first, so the room is exact.
+            openRoom(row, box) {
+                this.setRoom(0);
+                if (box.scrollHeight <= box.clientHeight) {
+                    return;
+                }
+                const short =
+                    this.rowTop(row, box) +
+                    box.scrollTop -
+                    (box.scrollHeight - box.clientHeight);
+                this.setRoom(short);
+            },
+            // The narrow layout scrolls the page as well as the list box. Move
+            // the page only when the venue bar above the box is above the
+            // screen, so the venue stays beside the rows.
+            showBox(box) {
+                if (!isNarrow.value) {
+                    return;
+                }
+                const bar = document.querySelector(".venue-bar");
+                const margin = bar ? bar.getBoundingClientRect().height : 0;
+                const belowBar = box.getBoundingClientRect().top - margin;
+                if (belowBar >= 0) {
+                    return;
+                }
+                moveScroll(page, page.scrollTop + belowBar - 4);
+            },
+            // Put one row where the reader looks. "top" keeps the row at the
+            // first line of the box. "center" puts the row in the middle of the
+            // box, which the wide layout always shows in full.
+            reveal(row, align) {
+                const box = this.box();
+                if (!row || !box) {
+                    return;
+                }
+                if (align === "center") {
+                    const bounds = row.getBoundingClientRect();
+                    const middle = box.getBoundingClientRect().top + box.clientHeight / 2;
+                    const delta = bounds.top + bounds.height / 2 - middle;
+                    if (Math.abs(delta) > 1) {
+                        moveScroll(box, box.scrollTop + delta);
+                    }
+                    return;
+                }
+                this.openRoom(row, box);
+                this.showBox(box);
+                // Read again: the room changed the scroll limit.
+                const delta = this.rowTop(row, box);
+                if (Math.abs(delta) > 1) {
+                    moveScroll(box, box.scrollTop + delta);
+                }
+            },
+            // The table row at one place in the visible order.
+            rowAt(index) {
+                const box = this.box();
+                if (!box) {
+                    return null;
+                }
+                return box.querySelectorAll("tbody tr")[index] || null;
+            },
+            // The first table row of one venue.
+            rowOfVenue(venueUrl) {
+                const box = this.box();
+                if (!box) {
+                    return null;
+                }
+                for (const row of box.querySelectorAll("tbody tr")) {
+                    if (row.dataset.venueUrl === venueUrl) {
+                        return row;
+                    }
+                }
+                return null;
+            },
+        };
 
-        // The narrow layout scrolls the page as well as the list box. Move the
-        // page only when the venue bar above the list box is above the screen,
-        // so the venue stays beside the rows.
-        function scrollPageToList(scroller) {
-            if (!isNarrow.value) {
-                return;
-            }
-            const bar = document.querySelector(".venue-bar");
-            const margin = bar ? bar.getBoundingClientRect().height : 0;
-            const top = scroller.getBoundingClientRect().top - margin;
-            if (top >= 0) {
-                return;
-            }
-            const target = Math.round(window.scrollY + top - 4);
-            if (smoothScroll) {
-                window.scrollTo({top: target, behavior: "smooth"});
-            } else {
-                window.scrollTo(0, target);
-            }
-        }
-
-        // The distance from the top of the row to the top of the list box.
-        // The sticky header fills the space when the row is at the top.
-        function rowGap(row, scroller) {
-            const head = scroller.querySelector("thead");
-            const offset = head ? head.getBoundingClientRect().height : 0;
-            return row.getBoundingClientRect().top
-                - scroller.getBoundingClientRect().top
-                - offset;
-        }
-
-        // Put the row at the top of the list box. Move the page when the top of
-        // the box is above the screen, so the row stays visible.
-        function alignRowToTop(row) {
-            const scroller = document.querySelector(".gig-scroll");
-            if (!row || !scroller) {
-                return;
-            }
-            scrollPageToList(scroller);
-            const delta = rowGap(row, scroller);
-            if (Math.abs(delta) > 1) {
-                scrollContainer(scroller, scroller.scrollTop + delta);
-            }
-        }
-
-        function scrollRowToTop(row) {
-            const scroller = document.querySelector(".gig-scroll");
-            if (!row || !scroller) {
-                return;
-            }
-            const head = scroller.querySelector("thead");
-            const offset = head ? head.getBoundingClientRect().height : 0;
-            // Measure the table alone, so the room is exact.
-            scrollRoom(0);
-            if (scroller.scrollHeight <= scroller.clientHeight) {
-                return;
-            }
-            const short = row.getBoundingClientRect().top
-                - scroller.getBoundingClientRect().top
-                + scroller.scrollTop
-                - offset
-                - (scroller.scrollHeight - scroller.clientHeight);
-            scrollRoom(short);
-            // Read again: the room changed the scroll limit.
-            alignRowToTop(row);
-        }
+        const syncScroll = () => list.edges();
+        watch(isNarrow, () => list.setRoom(0));
 
         function scrollToVenue(venueUrl) {
-            for (const row of document.querySelectorAll("tbody tr")) {
-                if (row.dataset.venueUrl !== venueUrl) {
-                    continue;
-                }
-                if (isNarrow.value) {
-                    scrollRowToTop(row);
-                } else {
-                    row.scrollIntoView({block: "center", behavior: "smooth"});
-                }
-                return;
+            const row = list.rowOfVenue(venueUrl);
+            if (row) {
+                list.reveal(row, isNarrow.value ? "top" : "center");
             }
         }
 
         // After a sort, bring the selected gig back into the list box.
         function scrollToSelectedGig() {
             const gig = selectedGig.value;
-            const scroller = document.querySelector(".gig-scroll");
-            if (!gig || !scroller) {
+            if (!gig) {
                 return;
             }
             const index = visibleRows.value.indexOf(gig);
             if (index < 0) {
                 return;
             }
-            const row = scroller.querySelectorAll("tbody tr")[index];
-            if (!row) {
-                return;
-            }
-            if (isNarrow.value) {
-                scrollRowToTop(row);
-            } else {
-                // The sticky header sits above the row. Align below it, so
-                // the row does not land under the header.
-                alignRowToTop(row);
+            const row = list.rowAt(index);
+            if (row) {
+                list.reveal(row, "top");
             }
         }
 
@@ -1613,18 +1624,24 @@
             activeVenueUrl.value = gig.venue_url || "";
             const row = isNarrow.value && event ? event.currentTarget : null;
             // The tap fires touchstart before click. Clear the mark, so a
-            // later touch can cancel the correction below.
+            // later touch can cancel the move below.
             touched = false;
+            // The summary above the list changes height at each step of the
+            // lookup, so the row is put back after Vue writes the change.
+            const holdRow = async () => {
+                if (!row || touched) {
+                    return;
+                }
+                await nextTick();
+                list.reveal(row, "top");
+            };
             if (!gig.venue_url) {
                 venue.value = {
                     loading: false,
                     data: null,
                     error: "This gig has no venue link.",
                 };
-                if (row) {
-                    await nextTick();
-                    scrollRowToTop(row);
-                }
+                await holdRow();
                 return;
             }
             venueRequest += 1;
@@ -1635,39 +1652,27 @@
             if (cached) {
                 venue.value = {loading: false, data: cached, error: ""};
                 showOnMap(cached);
-                if (row && !touched) {
-                    await nextTick();
-                    alignRowToTop(row);
-                }
+                await holdRow();
                 return;
             }
             venue.value = {loading: true, data: null, error: ""};
-            if (row) {
-                // The summary above the list changed height. Measure after
-                // Vue writes the change to the page.
-                await nextTick();
-                scrollRowToTop(row);
-            }
+            await holdRow();
             try {
                 const data = await fetchVenue(gig.venue_url);
                 if (venueRequest !== requestId) {
                     return;
                 }
                 venue.value = {loading: false, data, error: ""};
-                if (row && !touched) {
-                    // The address changed the height above the list again.
-                    await nextTick();
-                    alignRowToTop(row);
-                }
+                await holdRow();
                 showOnMap(data);
             } catch (problem) {
                 if (venueRequest === requestId) {
-                    const message = `Could not load the venue: ${problem.message}`;
-                    venue.value = {loading: false, data: null, error: message};
-                    if (row && !touched) {
-                        await nextTick();
-                        alignRowToTop(row);
-                    }
+                    venue.value = {
+                        loading: false,
+                        data: null,
+                        error: `Could not load the venue: ${problem.message}`,
+                    };
+                    await holdRow();
                 }
             }
         }
@@ -1683,7 +1688,7 @@
                 window.requestAnimationFrame(() => map.invalidateSize());
             }).observe(document.getElementById("map"));
             load(RANGES.find((range) => range.id === "today") || RANGES[0]);
-            new ResizeObserver(updateScrollEdges).observe(document.querySelector(".gig-scroll"));
+            new ResizeObserver(syncScroll).observe(document.querySelector(".gig-scroll"));
         });
 
         return {
@@ -1708,7 +1713,7 @@
             markerCount,
             sideWidth,
             frameClass,
-            updateScrollEdges,
+            syncScroll,
             startDrag,
             activeVenueUrl,
             formatDate,
