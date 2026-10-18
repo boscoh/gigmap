@@ -2,7 +2,8 @@
 
 `gigmap` is a user interface for the way I look for events. Most event sites
 do not work this way. As a casual gig goer, I want to see all the gigs for one
-day, in a list and on a map. The location matters, and so does a quick scan.
+day, in a list and on a map. The location matters, and so does a quick scan. I'd
+like to quickly see prices, and do a quick google search.
 
 The live site is at [gigmap.dev](https://gigmap.dev).
 
