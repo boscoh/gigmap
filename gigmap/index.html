@@ -1484,6 +1484,11 @@
         // user stops that, so the view stays where it is.
         let viewStopped = false;
         let lastFit = 0;
+        // Leaflet keeps the animation flag until the zoom animation ends, and
+        // it drops a setView that lands during that time. So the app reads the
+        // flag from the events and holds a dropped fit until the end.
+        let zooming = false;
+        let fitQueued = false;
 
         // The view that the markers ask for. A fit of one venue has a point
         // for bounds, and Leaflet then goes to the deepest zoom, so the zoom
@@ -1498,7 +1503,25 @@
         }
 
         function fitVenues() {
-            if (markers.size === 0) {
+            // A gesture from the user ends the fitting for this load.
+            if (viewStopped || markers.size === 0) {
+                return;
+            }
+            if (zooming) {
+                // The running animation ends with zoomend. Fit again then, so
+                // the last fit of a stream always lands.
+                if (!fitQueued) {
+                    fitQueued = true;
+                    const applyFit = () => {
+                        if (!fitQueued) {
+                            return;
+                        }
+                        fitQueued = false;
+                        fitVenues();
+                    };
+                    map.once("zoomend", applyFit);
+                    map.once("moveend", applyFit);
+                }
                 return;
             }
             const view = venueView();
@@ -1513,6 +1536,12 @@
         // The one finger touch pan comes as dragstart.
         function watchGestures() {
             map.on("dragstart dblclick", stopFitting);
+            map.on("zoomstart", () => {
+                zooming = true;
+            });
+            map.on("zoomend", () => {
+                zooming = false;
+            });
             const container = map.getContainer();
             container.addEventListener("wheel", stopFitting, {passive: true});
             container.addEventListener(
@@ -1591,12 +1620,12 @@
                     // second keep the zoom smooth, and a slow stream
                     // still shows each step.
                     const now = performance.now();
-                    if (!viewStopped && now - lastFit >= 200) {
+                    if (now - lastFit >= 200) {
                         lastFit = now;
                         fitVenues();
                     }
                 }
-                if (runId === mapRun && !viewStopped) {
+                if (runId === mapRun) {
                     fitVenues();
                 }
             } catch (problem) {
