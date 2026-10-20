@@ -328,9 +328,6 @@ class CachedSource:
         self._source = source
         self._stores = stores
 
-    async def page(self, start_date: str, end_date: str) -> str:
-        return await self._source.page(start_date, end_date)
-
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         gigs = await self._stores.days.fetch(
             f"{start_date}_{end_date}",

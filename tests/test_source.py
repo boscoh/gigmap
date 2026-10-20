@@ -1,6 +1,7 @@
 """Tests for the agnostic source protocol and the server routes."""
 
 import asyncio
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,8 @@ from gigmap import beat, geocode, server, sources, stores
 
 
 VENUE_URL = "https://beat.com.au/directory/venue/"
+SECOND_VENUE_URL = "https://beat.com.au/directory/hall/"
+PARAMS = {"start_date": "2026-10-01", "end_date": "2026-10-02"}
 
 class FakeSource:
     """A gig source that answers with saved data."""
@@ -21,12 +24,14 @@ class FakeSource:
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.gig_error: Exception | None = None
+        self.detail_error: Exception | None = None
         self.venue_error: Exception | None = None
         self.gig_venue_urls: list[str] = [VENUE_URL]
-
-    async def page(self, start_date: str, end_date: str) -> str:
-        self.calls.append(("page", start_date, end_date))
-        return "<html>page</html>"
+        self.gig_time: str | None = None
+        # A test holds the read of one venue at this url until it opens
+        # the gate, so a second gig can leave its line first.
+        self.slow_venue_url: str | None = None
+        self.venue_gate: asyncio.Event | None = None
 
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         self.calls.append(("gigs", start_date, end_date))
@@ -38,16 +43,22 @@ class FakeSource:
                 detail_url="https://beat.com.au/act/",
                 venue="Venue",
                 venue_url=venue_url,
+                time=self.gig_time,
             )
             for venue_url in self.gig_venue_urls
         ]
 
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         self.calls.append(("gig_detail", detail_url))
+        if self.detail_error is not None:
+            raise self.detail_error
         return sources.GigDetail(detail_url=detail_url, time="8:30pm")
 
     async def venue(self, venue_url: str) -> sources.Venue:
         self.calls.append(("venue", venue_url))
+        if venue_url == self.slow_venue_url:
+            if self.venue_gate is not None:
+                await self.venue_gate.wait()
         if self.venue_error is not None:
             raise self.venue_error
         return sources.Venue(name="Venue", address="1 St", venue_url=venue_url)
@@ -169,13 +180,13 @@ def test_a_page_prefix_answers_that_source() -> None:
 
 
 def test_an_api_path_answers_its_source() -> None:
-    assert server.api_source_name("/api/beat/gigs") == "beat"
-    assert server.api_source_name("/api/fringe/gigs") == "fringe"
+    assert server.api_source_name("/api/beat/events") == "beat"
+    assert server.api_source_name("/api/fringe/events") == "fringe"
     assert server.api_source_name("/api/fringe") == "fringe"
 
 
 def test_an_unknown_api_source_is_not_a_source() -> None:
-    for path in ("/api/gigs", "/api/nothing/gigs", "/gigs"):
+    for path in ("/api/events", "/api/nothing/events", "/events"):
         with pytest.raises(HTTPException):
             server.api_source_name(path)
 
@@ -184,7 +195,7 @@ def test_the_api_prefix_of_a_source() -> None:
     assert server.api_prefix("beat") == "/api/beat"
     assert server.api_prefix("fringe") == "/api/fringe"
 
-def test_each_site_serves_its_own_page_and_reads(
+def test_each_site_serves_its_own_page(
     client: tuple[TestClient, FakeSource],
 ) -> None:
     http, _ = client
@@ -206,12 +217,12 @@ def test_a_read_answers_on_the_fringe_path(
     http, fake = client
 
     response = http.get(
-        "/api/fringe/gigs",
+        "/api/fringe/events",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
     assert response.status_code == 200
-    assert fake.calls == [("gigs", "2026-10-01", "2026-10-02")]
+    assert fake.calls[0] == ("gigs", "2026-10-01", "2026-10-02")
 
 
 def test_the_beat_path_is_not_served_twice(
@@ -223,47 +234,111 @@ def test_the_beat_path_is_not_served_twice(
     assert http.get("/beat/").status_code == 404
 
 
-def test_gig_list_route_uses_the_source(client: tuple[TestClient, FakeSource]) -> None:
+def test_the_event_line_holds_every_gig_field(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The line holds the whole gig, so the page needs no list read."""
     http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
 
-    response = http.get(
-        "/api/beat/gigs",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
+    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
 
-    assert response.status_code == 200
-    assert response.json() == [
-        {
-            "artist": "Act",
-            "detail_url": "https://beat.com.au/act/",
-            "date": None,
-            "end_date": None,
-            "venue": "Venue",
-            "venue_url": VENUE_URL,
-            "genres": [],
-            "categories": [],
-            "ticket": None,
-            "image_url": None,
-            "image_alt": None,
-            "time": None,
-        }
+    assert line["gig"] == {
+        "artist": "Act",
+        "detail_url": "https://beat.com.au/act/",
+        "date": None,
+        "end_date": None,
+        "venue": "Venue",
+        "venue_url": VENUE_URL,
+        "genres": [],
+        "categories": [],
+        "ticket": None,
+        "image_url": None,
+        "image_alt": None,
+        "time": "8:30pm",
+    }
+    assert ("gigs", "2026-10-01", "2026-10-02") in fake.calls
+
+
+def _lines(response: Any) -> list[dict[str, Any]]:
+    """Return the lines of an NDJSON answer as objects."""
+    return [
+        json.loads(line) for line in response.text.splitlines() if line.strip()
     ]
-    assert fake.calls == [("gigs", "2026-10-01", "2026-10-02")]
 
 
-def test_times_route_streams_the_detail_time(
+def test_the_removed_reads_answer_404(
     client: tuple[TestClient, FakeSource],
 ) -> None:
-    http, fake = client
+    """One read serves the page, so the old reads go."""
+    http, _ = client
 
-    response = http.get(
-        "/api/beat/times",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
+    for path in ("/api/beat/gigs", "/api/beat/times", "/api/beat/venues"):
+        response = http.get(path, params=PARAMS)
+        assert response.status_code == 404, path
+
+
+def test_the_event_stream_answers_one_line_for_each_gig(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.gig_venue_urls = [VENUE_URL, SECOND_VENUE_URL]
+
+    response = http.get("/api/beat/events", params=PARAMS)
 
     assert response.status_code == 200
-    assert response.json() == {"index": 0, "time": "8:30pm"}
-    assert ("gig_detail", "https://beat.com.au/act/") in fake.calls
+    lines = _lines(response)
+    assert sorted(line["index"] for line in lines) == [0, 1]
+    assert {line["gig"]["time"] for line in lines} == {"8:30pm"}
+    assert {line["venue"]["venue_url"] for line in lines} == {
+        VENUE_URL,
+        SECOND_VENUE_URL,
+    }
+
+
+def test_the_event_stream_reads_a_shared_venue_one_time(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.gig_venue_urls = [VENUE_URL, VENUE_URL]
+
+    response = http.get("/api/beat/events", params=PARAMS)
+
+    assert response.status_code == 200
+    assert fake.calls.count(("venue", VENUE_URL)) == 1
+    lines = _lines(response)
+    assert len(lines) == 2
+    assert all(line["venue"]["venue_url"] == VENUE_URL for line in lines)
+
+
+def test_the_event_stream_skips_the_detail_read_of_a_listed_time(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.gig_time = "7:30pm"
+
+    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
+
+    assert line["gig"]["time"] == "7:30pm"
+    assert ("gig_detail", "https://beat.com.au/act/") not in fake.calls
+
+
+def test_the_event_stream_answers_a_failed_detail_line(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.detail_error = sources.SourceError("no detail page")
+
+    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
+
+    assert line["index"] == 0
+    assert line["gig"]["time"] is None
+    assert line["venue"]["venue_url"] == VENUE_URL
+    assert "error" not in line
 
 
 def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
@@ -275,14 +350,10 @@ def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
     """
     http, _ = client
     monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-    params = {"start_date": "2026-10-01", "end_date": "2026-10-02"}
 
-    times = http.get("/api/beat/times", params=params)
-    venues = http.get("/api/beat/venues", params=params)
+    response = http.get("/api/beat/events", params=PARAMS)
 
-    assert times.headers.get("x-accel-buffering") == "no"
-    assert venues.headers.get("x-accel-buffering") == "no"
-
+    assert response.headers.get("x-accel-buffering") == "no"
 
 def test_venue_route_uses_the_source(
     client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
@@ -302,71 +373,95 @@ def test_venue_route_uses_the_source(
 
 
 
-def test_the_venue_stream_answers_one_line_for_each_venue(
-    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    http, _ = client
-    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-
-    response = http.get(
-        "/api/beat/venues",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["venue"]["venue_url"] == VENUE_URL
-    assert data["venue"]["name"] == "Venue"
-    assert data["venue"]["latitude"] is None
-
-
-def test_the_venue_stream_reads_a_repeated_venue_one_time(
-    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    http, fake = client
-    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-    fake.gig_venue_urls = [VENUE_URL, VENUE_URL]
-
-    response = http.get(
-        "/api/beat/venues",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
-
-    assert response.status_code == 200
-    assert fake.calls.count(("venue", VENUE_URL)) == 1
-    assert len(response.text.strip().split("\n")) == 1
-
-
-def test_the_venue_stream_answers_a_line_for_a_failed_venue(
+def test_the_event_stream_answers_a_failed_venue_line(
     client: tuple[TestClient, FakeSource],
 ) -> None:
     http, fake = client
     fake.venue_error = sources.SourceError("cannot reach beat.com.au")
 
-    response = http.get(
-        "/api/beat/venues",
-        params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
-    )
+    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
 
-    assert response.status_code == 200
-    assert response.json() == {
+    assert set(line) == {"index", "gig", "venue", "error"}
+    assert line["gig"]["artist"] == "Act"
+    assert line["gig"]["time"] == "8:30pm"
+    assert line["venue"] is None
+    assert line["error"] == "cannot reach beat.com.au"
+
+
+def test_the_event_line_holds_the_whole_venue(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, _ = client
+
+    async def found(name: str | None, address: str | None) -> dict:
+        return {"latitude": -37.8, "longitude": 144.9}
+
+    monkeypatch.setattr(geocode, "geocode_venue", found)
+
+    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
+
+    assert line["index"] == 0
+    assert line["gig"]["artist"] == "Act"
+    assert line["venue"] == {
         "venue_url": VENUE_URL,
-        "error": "cannot reach beat.com.au",
+        "name": "Venue",
+        "address": "1 St",
+        "latitude": -37.8,
+        "longitude": 144.9,
     }
 
 
-def test_a_reversed_range_answers_400(
+def test_a_bad_date_costs_the_event_stream_no_read(
     client: tuple[TestClient, FakeSource],
 ) -> None:
     http, fake = client
 
     response = http.get(
-        "/api/beat/gigs",
+        "/api/beat/events",
         params={"start_date": "2026-10-19", "end_date": "2026-10-17"},
     )
 
     assert response.status_code == 400
     assert fake.calls == []
+
+
+def test_a_blocked_venue_holds_no_other_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A line leaves the stream while the venue of another gig reads.
+
+    The test reads the line of a fast venue before the gate of the slow
+    venue opens, so a design with one barrier per range cannot pass.
+    """
+    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake = FakeSource()
+    fake.gig_venue_urls = [VENUE_URL, SECOND_VENUE_URL]
+    source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
+
+    async def run() -> list[dict[str, Any]]:
+        gate = asyncio.Event()
+        fake.slow_venue_url = VENUE_URL
+        fake.venue_gate = gate
+        response = await server.event_stream(source, "2026-10-01", "2026-10-02")
+        lines = cast(Any, response.body_iterator)
+        pending = asyncio.ensure_future(lines.__anext__())
+        try:
+            # The gate of the slow venue stays shut, so only the gig of
+            # the fast venue can answer.
+            fast = json.loads(await asyncio.wait_for(pending, timeout=5))
+            gate.set()
+            rest = [json.loads(line) async for line in lines]
+        finally:
+            pending.cancel()
+        return [fast, *rest]
+
+    lines = asyncio.run(run())
+
+    assert [line["index"] for line in lines] == [1, 0]
+    assert lines[0]["gig"]["venue_url"] == SECOND_VENUE_URL
+    assert lines[0]["venue"]["venue_url"] == SECOND_VENUE_URL
+
 
 
 def test_a_damaged_date_answers_400(
@@ -375,7 +470,7 @@ def test_a_damaged_date_answers_400(
     http, fake = client
 
     response = http.get(
-        "/api/beat/gigs",
+        "/api/beat/events",
         params={"start_date": "17/10/2026", "end_date": "2026-10-17"},
     )
 
@@ -397,7 +492,7 @@ def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> No
     fake.gig_error = sources.SourceError("cannot reach beat.com.au")
 
     response = http.get(
-        "/api/beat/gigs",
+        "/api/beat/events",
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
@@ -439,7 +534,7 @@ def test_the_venue_is_cached_only_with_coordinates(
     source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
 
     async def found(name: str | None, address: str | None) -> dict:
-        return {"latitude": -37.8, "longitude": 144.9, "display_name": "Here"}
+        return {"latitude": -37.8, "longitude": 144.9}
 
     monkeypatch.setattr(geocode, "geocode_venue", found)
 

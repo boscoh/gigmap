@@ -87,7 +87,7 @@ of the other.
 | `gigmap/sources.py` | the protocol and the data classes, so a second site is possible       |
 | `gigmap/beat.py`    | every rule about `beat.com.au`, and the only reader of that site      |
 | `gigmap/fringe.py`  | every rule about the Fringe API, and the only reader of that site     |
-| `gigmap/geocode.py` | the only reader of Nominatim, and the map links                       |
+| `gigmap/geocode.py` | the only reader of Nominatim, and the venue coordinates               |
 | `gigmap/stores.py`  | the JSON cache, the three stores, the cleanup, and the cached source  |
 | `gigmap/index.html` | the whole client, in one file                                         |
 | `data/`             | the saved JSON                                                        |

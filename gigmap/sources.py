@@ -108,10 +108,10 @@ class GigDetail(BaseModel):
 
 
 class Venue(BaseModel):
-    """The address data of one venue, with the geocode and map data.
+    """The address data of one venue, with the geocode.
 
-    The `latitude`, `longitude`, `display_name`, `map_embed_url`, and
-    `map_url` fields are None until the server looks the venue up.
+    The `latitude` and `longitude` fields are None until the server looks
+    the venue up. The page puts the marker on the map from them.
     """
 
     venue_url: str
@@ -119,18 +119,10 @@ class Venue(BaseModel):
     address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    display_name: str | None = None
-    map_embed_url: str | None = None
-    map_url: str | None = None
 
 
 class GigSource(Protocol):
     """The data that the server reads from a gig source."""
-
-    # pi-lens-ignore: no-ellipsis-body
-    async def page(self, start_date: str, end_date: str) -> str:
-        """Return the raw page of a date range."""
-        ...
 
     # pi-lens-ignore: no-ellipsis-body
     async def gigs(self, start_date: str, end_date: str) -> list[Gig]:

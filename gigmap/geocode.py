@@ -1,4 +1,4 @@
-"""Look up an address on Nominatim and build the map links.
+"""Look up the coordinates of an address on Nominatim.
 
 Nominatim allows one request per second, needs an application user agent,
 and needs cached results. This module holds the only code that talks to
@@ -9,7 +9,6 @@ See https://operations.osmfoundation.org/policies/nominatim/
 
 import asyncio
 import time
-from urllib.parse import urlencode
 
 import httpx
 
@@ -21,26 +20,6 @@ NOMINATIM_HEADERS = {"User-Agent": "gigmap/0.1 (personal Melbourne gig guide)"}
 
 _geocode_lock = asyncio.Lock()
 _last_geocode = 0.0
-
-
-def map_urls(
-    latitude: float, longitude: float, delta: float = 0.004
-) -> tuple[str, str]:
-    """Return the OpenStreetMap embed url and page url of one point."""
-    bbox = (
-        f"{longitude - delta:.6f},{latitude - delta:.6f},"
-        f"{longitude + delta:.6f},{latitude + delta:.6f}"
-    )
-    marker = f"{latitude:.6f},{longitude:.6f}"
-    embed = "https://www.openstreetmap.org/export/embed.html?" + urlencode(
-        {"bbox": bbox, "layer": "mapnik", "marker": marker}
-    )
-    page = (
-        "https://www.openstreetmap.org/?"
-        + urlencode({"mlat": latitude, "mlon": longitude})
-        + f"#map=17/{latitude}/{longitude}"
-    )
-    return embed, page
 
 
 async def geocode(query: str) -> dict | None:
@@ -82,11 +61,7 @@ async def geocode(query: str) -> dict | None:
         longitude = float(first["lon"])
     except (KeyError, TypeError, ValueError):
         return None
-    return {
-        "latitude": latitude,
-        "longitude": longitude,
-        "display_name": first.get("display_name"),
-    }
+    return {"latitude": latitude, "longitude": longitude}
 
 
 async def geocode_venue(name: str | None, address: str | None) -> dict | None:
@@ -104,28 +79,17 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
 
 
 async def enrich_venue(venue: sources.Venue) -> sources.Venue:
-    """Add the geocode and the map links to one venue.
+    """Add the coordinates to one venue.
 
-    A source that gives the coordinates needs no lookup. The map links
-    then come from those coordinates.
+    A source that gives the coordinates needs no lookup.
     """
     if venue.latitude is not None and venue.longitude is not None:
-        venue.map_embed_url, venue.map_url = map_urls(
-            venue.latitude, venue.longitude
-        )
         return venue
     place = await geocode_venue(venue.name, venue.address)
     if place is None:
         venue.latitude = None
         venue.longitude = None
-        venue.display_name = None
-        venue.map_embed_url = None
-        venue.map_url = None
     else:
         venue.latitude = place["latitude"]
         venue.longitude = place["longitude"]
-        venue.display_name = place["display_name"]
-        venue.map_embed_url, venue.map_url = map_urls(
-            place["latitude"], place["longitude"]
-        )
     return venue

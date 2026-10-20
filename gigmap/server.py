@@ -51,6 +51,10 @@ DETAIL_CONCURRENCY = 5
 # The venue reads use the same size of pool.
 VENUE_CONCURRENCY = 5
 
+# The page shows a failed venue read. Any error that is not a source
+# error keeps this text, so an internal message stays on the server.
+VENUE_FAILURE_TEXT = "the venue lookup failed"
+
 # nginx holds a small stream in its buffers until the source closes it.
 # This header makes nginx pass each line to the page at once.
 STREAM_HEADERS = {"X-Accel-Buffering": "no"}
@@ -101,7 +105,7 @@ def page_source_name(path: str) -> str:
 def api_source_name(path: str) -> str:
     """Return the name of the source of one API path.
 
-    The reads sit at `/api/<source>/<read>`, so `/api/fringe/gigs`
+    The reads sit at `/api/<source>/<read>`, so `/api/fringe/events`
     answers from the Fringe source. An unknown source is a 404, so a
     wrong name never answers from another site.
     """
@@ -190,117 +194,119 @@ async def gig_time(
     return data.time if data is not None else None
 
 
-@api_router.get("/gigs")
-async def gig_list(
-    source: SourceDep,
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-) -> list[sources.Gig]:
-    validate_dates(start_date, end_date)
-    return await source.gigs(start_date, end_date)
+async def detail_read(
+    source: sources.GigSource,
+    gig: sources.Gig,
+    semaphore: asyncio.Semaphore,
+) -> str | None:
+    """Return the start time of one gig, and None when the read fails."""
+    try:
+        return await gig_time(source, gig, semaphore)
+    except Exception:
+        return None
 
 
-@api_router.get("/times")
-async def gig_times(
-    source: SourceDep,
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-) -> StreamingResponse:
-    """Stream one NDJSON line for each gig as its start time arrives."""
-    validate_dates(start_date, end_date)
-    gigs = await source.gigs(start_date, end_date)
-
-    async def lines() -> AsyncIterator[str]:
-        semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
-        queue: asyncio.Queue[tuple[int, str | None]] = asyncio.Queue()
-
-        async def worker(index: int, gig: sources.Gig) -> None:
-            try:
-                time_text = await gig_time(source, gig, semaphore)
-            except Exception:
-                time_text = None
-            await queue.put((index, time_text))
-
-        workers = [
-            asyncio.create_task(worker(index, gig))
-            for index, gig in enumerate(gigs)
-        ]
-        try:
-            for _ in workers:
-                index, time_text = await queue.get()
-                yield json.dumps({"index": index, "time": time_text}) + "\n"
-        finally:
-            for task in workers:
-                task.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
-
-    return StreamingResponse(
-        lines(),
-        media_type="application/x-ndjson",
-        headers=STREAM_HEADERS,
-    )
+async def venue_read(
+    source: sources.GigSource,
+    venue_url: str,
+    semaphore: asyncio.Semaphore,
+) -> sources.Venue | Exception:
+    """Return one venue, or the reason that its read failed."""
+    try:
+        async with semaphore:
+            return await source.venue(venue_url)
+    except Exception as error:
+        return error
 
 
-def venue_answer(venue: sources.Venue) -> str:
-    """Return the one stream line of a venue."""
-    return json.dumps({"venue": venue.model_dump()}) + "\n"
-
-
-def venue_failure(venue_url: str, error: Exception) -> str:
-    """Return the one stream line of a venue that failed.
+def venue_failure_text(error: Exception) -> str:
+    """Return the text of a failed venue read.
 
     The message of a source error goes to the page, so the page can show
     the reason. Any other message stays on the server.
     """
     if isinstance(error, sources.SourceError):
-        text = str(error)
-    else:
-        text = "the venue lookup failed"
-    return json.dumps({"venue_url": venue_url, "error": text}) + "\n"
+        return str(error)
+    return VENUE_FAILURE_TEXT
 
 
-@api_router.get("/venues")
-async def venue_stream(
+def event_line(
+    index: int,
+    gig: sources.Gig,
+    time_text: str | None,
+    venue: sources.Venue | Exception | None,
+) -> str:
+    """Return the one stream line of a gig, with all of its data."""
+    data = gig.model_dump()
+    # The line holds the time that the detail read found, so the page
+    # needs no second line for it.
+    data["time"] = time_text
+    line: dict[str, object] = {"index": index, "gig": data, "venue": None}
+    if isinstance(venue, Exception):
+        line["error"] = venue_failure_text(venue)
+    elif venue is not None:
+        line["venue"] = venue.model_dump()
+    return json.dumps(line) + "\n"
+
+
+async def event_lines(
+    source: sources.GigSource,
+    gigs: list[sources.Gig],
+) -> AsyncIterator[str]:
+    """Yield one line for each gig, as its time and venue arrive.
+
+    Every read starts before the first line leaves. A gig waits for its
+    own two reads only, so a slow venue holds no other gig's line.
+    """
+    detail_pool = asyncio.Semaphore(DETAIL_CONCURRENCY)
+    venue_pool = asyncio.Semaphore(VENUE_CONCURRENCY)
+    # One detail read for each gig, so a time in the list costs no read.
+    times = {
+        index: asyncio.create_task(detail_read(source, gig, detail_pool))
+        for index, gig in enumerate(gigs)
+    }
+    # One venue read for each url, so a venue of many gigs costs one read.
+    venues: dict[str, asyncio.Task[sources.Venue | Exception]] = {}
+    for gig in gigs:
+        url = gig.venue_url
+        if url and url not in venues:
+            venues[url] = asyncio.create_task(
+                venue_read(source, url, venue_pool)
+            )
+
+    async def one(index: int, gig: sources.Gig) -> str:
+        time_text = await times[index]
+        venue: sources.Venue | Exception | None = None
+        if gig.venue_url:
+            venue = await venues[gig.venue_url]
+        return event_line(index, gig, time_text, venue)
+
+    tasks = [
+        asyncio.create_task(one(index, gig))
+        for index, gig in enumerate(gigs)
+    ]
+    reads = [*times.values(), *venues.values()]
+    try:
+        for done in asyncio.as_completed(tasks):
+            yield await done
+    finally:
+        # A client disconnect cancels every read.
+        for task in [*tasks, *reads]:
+            task.cancel()
+        await asyncio.gather(*tasks, *reads, return_exceptions=True)
+
+
+@api_router.get("/events")
+async def event_stream(
     source: SourceDep,
     start_date: str = Query(...),
     end_date: str = Query(...),
 ) -> StreamingResponse:
-    """Stream one NDJSON line for each venue of a date range.
-
-    A line holds the venue, or the reason for the failure. The stream
-    starts when the server has the gig list, so the page can add each
-    marker as its venue arrives. The worker pool covers the source read
-    only. The geocoder holds its own rate limit.
-    """
+    """Stream one line for each gig, when its time and venue are known."""
     validate_dates(start_date, end_date)
     gigs = await source.gigs(start_date, end_date)
-    # One read for each venue, so a venue of many gigs costs one read.
-    urls = list(dict.fromkeys(gig.venue_url for gig in gigs if gig.venue_url))
-
-    async def lines() -> AsyncIterator[str]:
-        semaphore = asyncio.Semaphore(VENUE_CONCURRENCY)
-        queue: asyncio.Queue[str] = asyncio.Queue()
-
-        async def worker(url: str) -> None:
-            try:
-                async with semaphore:
-                    venue = await source.venue(url)
-            except Exception as error:
-                await queue.put(venue_failure(url, error))
-                return
-            await queue.put(venue_answer(venue))
-
-        workers = [asyncio.create_task(worker(url)) for url in urls]
-        try:
-            for _ in workers:
-                yield await queue.get()
-        finally:
-            for task in workers:
-                task.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
-
     return StreamingResponse(
-        lines(),
+        event_lines(source, gigs),
         media_type="application/x-ndjson",
         headers=STREAM_HEADERS,
     )
@@ -318,7 +324,7 @@ def mount_sources(
 
     `/` answers the beat page and `/fringe/` answers the Fringe page.
     The reads of a source sit at `/api/<source>/`, so the Fringe reads
-    are at `/api/fringe/gigs`.
+    are at `/api/fringe/events`.
     """
     application.include_router(pages)
     for name in SOURCE_FACTORIES:

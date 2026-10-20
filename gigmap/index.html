@@ -891,11 +891,6 @@
         return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     }
 
-    async function fetchGigs(startDate, endDate) {
-        const searchParams = {start_date: startDate, end_date: endDate};
-        return window.api.get("gigs", {searchParams, timeout: 120000}).json();
-    }
-
     async function fetchVenue(venueUrl) {
         const searchParams = {venue_url: venueUrl};
         return window.api.get("venue", {searchParams, timeout: 60000}).json();
@@ -961,23 +956,15 @@
         const error = ref("");
         const selectedGig = ref(null);
         const venue = ref({loading: false, data: null, error: ""});
-        const mapping = ref(false);
-        const mapped = ref(0);
-        const toMap = ref(0);
+        const streaming = ref(false);
         const markerCount = ref(0);
-        const timing = ref(false);
-        const timesLoaded = ref(0);
-        const timesTotal = ref(0);
-        let timeRun = 0;
-        let timeSource = null;
+        let eventRun = 0;
+        let eventSource = null;
         const narrowScreen = window.matchMedia("(max-width: 991.98px)");
         const isNarrow = ref(narrowScreen.matches);
         narrowScreen.addEventListener("change", (event) => {
             isNarrow.value = event.matches;
         });
-        let mapRun = 0;
-        let venueSource = null;
-        let loadRun = 0;
         const activeVenueUrl = ref("");
         const venueInfo = new Map();
         let venueRequest = 0;
@@ -1049,9 +1036,7 @@
             return cells;
         });
 
-        async function load(range) {
-            loadRun += 1;
-            const runId = loadRun;
+        function load(range) {
             active.value = range.id;
             startDate.value = range.start || isoDate(range.from);
             endDate.value = range.end || isoDate(range.to);
@@ -1065,85 +1050,12 @@
                 }
                 markers.clear();
             }
-            stopVenues();
             markerCount.value = 0;
             activeVenueUrl.value = "";
             venueInfo.clear();
-            mapped.value = 0;
-            toMap.value = 0;
-            stopTimes();
+            gigs.value = [];
             list.setRoom(0);
-            try {
-                const data = await fetchGigs(startDate.value, endDate.value);
-                if (runId !== loadRun) {
-                    return;
-                }
-                gigs.value = data;
-                mapAllVenues();
-                loadTimes();
-            } catch (problem) {
-                if (runId !== loadRun) {
-                    return;
-                }
-                gigs.value = [];
-                error.value = `Could not load the gig guide: ${problem.message}`;
-            } finally {
-                if (runId === loadRun) {
-                    loading.value = false;
-                }
-            }
-        }
-
-        function stopTimes() {
-            timeRun += 1;
-            if (timeSource) {
-                timeSource.abort();
-                timeSource = null;
-            }
-            timing.value = false;
-        }
-
-        async function loadTimes() {
-            stopTimes();
-            const runId = timeRun;
-            const searchParams = {start_date: startDate.value, end_date: endDate.value};
-            timeSource = new AbortController();
-            timing.value = true;
-            timesLoaded.value = 0;
-            timesTotal.value = gigs.value.length;
-
-            try {
-                const response = await window.api.get("times", {
-                    searchParams,
-                    timeout: false,
-                    signal: timeSource.signal,
-                });
-                for await (const line of readNdjsonLines(response)) {
-                    if (runId !== timeRun) {
-                        break;
-                    }
-                    if (!line.trim()) {
-                        continue;
-                    }
-                    const update = parseLine(line);
-                    if (update === null) {
-                        continue;
-                    }
-                    const gig = gigs.value[update.index];
-                    if (gig) {
-                        gig.time = update.time;
-                        timesLoaded.value += 1;
-                    }
-                }
-            } catch (problem) {
-                if (problem.name !== "AbortError") {
-                    console.error("time lookup failed", problem);
-                }
-            } finally {
-                if (runId === timeRun) {
-                    timing.value = false;
-                }
-            }
+            loadEvents();
         }
 
         function timeValue(time) {
@@ -1212,12 +1124,9 @@
         const visibleRows = computed(() => (loading.value ? [] : visibleGigs.value));
         watch([visibleRows, loading], () => nextTick(syncScroll));
 
-        const busy = computed(() => loading.value || timing.value || mapping.value);
+        const busy = computed(() => loading.value || streaming.value);
 
         const gigsText = computed(() => {
-            if (timing.value && timesTotal.value) {
-                return `${timesLoaded.value}/${timesTotal.value} gigs`;
-            }
             if (loading.value || !gigs.value.length) {
                 return "";
             }
@@ -1225,9 +1134,6 @@
         });
 
         const venuesText = computed(() => {
-            if (mapping.value && toMap.value) {
-                return `in ${mapped.value}/${toMap.value} venues`;
-            }
             if (loading.value || !markerCount.value) {
                 return "";
             }
@@ -1561,43 +1467,37 @@
             });
         }
 
-        function stopVenues() {
-            mapRun += 1;
-            if (venueSource) {
-                venueSource.abort();
-                venueSource = null;
+        function stopEvents() {
+            eventRun += 1;
+            if (eventSource) {
+                eventSource.abort();
+                eventSource = null;
             }
-            mapping.value = false;
+            streaming.value = false;
         }
 
-        async function mapAllVenues() {
-            stopVenues();
-            const runId = mapRun;
+        async function loadEvents() {
+            stopEvents();
+            const runId = eventRun;
             viewStopped = false;
             lastFit = 0;
-            const urls = new Set();
-            for (const gig of gigs.value) {
-                if (gig.venue_url) {
-                    urls.add(gig.venue_url);
-                }
-            }
-            venueSource = new AbortController();
-            mapping.value = true;
-            mapped.value = 0;
-            toMap.value = urls.size;
+            eventSource = new AbortController();
+            streaming.value = true;
             try {
-                // One stream for all of the venues. The server reads them
-                // in a small pool, and the geocoder holds its own limit.
-                const response = await window.api.get("venues", {
+                // One stream for the whole range. The server makes one
+                // detail read for each gig and one venue read for each
+                // venue, and sends the line of a gig when its own two
+                // values are ready. The geocoder holds its own limit.
+                const response = await window.api.get("events", {
                     searchParams: {
                         start_date: startDate.value,
                         end_date: endDate.value,
                     },
                     timeout: false,
-                    signal: venueSource.signal,
+                    signal: eventSource.signal,
                 });
                 for await (const line of readNdjsonLines(response)) {
-                    if (runId !== mapRun) {
+                    if (runId !== eventRun) {
                         break;
                     }
                     if (!line.trim()) {
@@ -1607,14 +1507,22 @@
                     if (update === null) {
                         continue;
                     }
+                    // Each line holds the whole gig, so the row needs
+                    // no other read.
+                    const gig = update.gig;
+                    if (gig) {
+                        gigs.value.push(gig);
+                    }
+                    // The first row stops the loading state, so the table
+                    // shows each row as it arrives.
+                    loading.value = false;
                     if (update.venue) {
                         addMarker(update.venue);
-                    } else {
-                        console.error("venue lookup failed", update.venue_url, update.error);
+                    } else if (update.error) {
+                        console.error("venue lookup failed", gig ? gig.venue_url : "", update.error);
                     }
-                    mapped.value += 1;
-                    // Let the browser paint, so the markers appear one
-                    // at a time, even when one chunk holds many venues.
+                    // Let the browser paint, so a row and its marker appear
+                    // together, even when one chunk holds many lines.
                     await nextPaint();
                     // Ease the view to the markers so far. Five moves a
                     // second keep the zoom smooth, and a slow stream
@@ -1625,17 +1533,22 @@
                         fitVenues();
                     }
                 }
-                if (runId === mapRun) {
+                if (runId === eventRun) {
                     fitVenues();
                 }
             } catch (problem) {
                 if (problem.name !== "AbortError") {
-                    console.error("venue list failed", problem);
+                    console.error("event stream failed", problem);
+                    // No row arrived, so the page has no table to keep.
+                    if (runId === eventRun && !gigs.value.length) {
+                        error.value = `Could not load the gig guide: ${problem.message}`;
+                    }
                 }
             } finally {
-                if (runId === mapRun) {
-                    venueSource = null;
-                    mapping.value = false;
+                if (runId === eventRun) {
+                    eventSource = null;
+                    streaming.value = false;
+                    loading.value = false;
                 }
             }
         }
@@ -1732,12 +1645,7 @@
             selectedGig,
             venue,
             selectGig,
-            mapping,
-            mapped,
-            toMap,
-            timing,
-            timesLoaded,
-            timesTotal,
+            streaming,
             isNarrow,
             markerCount,
             sideWidth,
