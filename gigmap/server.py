@@ -4,14 +4,22 @@ import logging
 import os
 import re
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 import uvicorn
 from cyclopts import App, Parameter
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -19,7 +27,7 @@ from fastapi.responses import (
 )
 
 from gigmap import beat, fringe, sources, stores
-from gigmap.logger import log_kv, setup_logging
+from gigmap.logger import log_incoming, log_kv, setup_logging
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +95,42 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=SOURCE.title, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_incoming_request(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Log one incoming request, with its status and time."""
+    started = time.perf_counter()
+    path = request.url.path
+    if request.url.query:
+        path = f"{path}?{request.url.query}"
+    client = request.client.host if request.client else ""
+    try:
+        response = await call_next(request)
+    except Exception:
+        log_incoming(
+            LOGGER.warning,
+            request.method,
+            path,
+            status=500,
+            client=client,
+            seconds=f"{time.perf_counter() - started:.3f}",
+        )
+        raise
+    level = LOGGER.info if response.status_code < 500 else LOGGER.warning
+    log_incoming(
+        level,
+        request.method,
+        path,
+        status=response.status_code,
+        client=client,
+        seconds=f"{time.perf_counter() - started:.3f}",
+    )
+    return response
+
+
 page_router = APIRouter()
 api_router = APIRouter()
 
@@ -355,6 +399,7 @@ def serve(
     setup_logging()
 
     if reload:
+        # pi-lens-ignore: no-uvicorn-non-import-string
         uvicorn.run(
             "gigmap.server:app",
             host=host,

@@ -8,8 +8,9 @@ Application code logs through ``log_kv``, which prints an event name and then
 its fields as a block of key/value lines. Keys are left-justified, so every
 value starts in the same column and a block is quick to scan.
 
-Every HTTP read calls ``log_request``, so the beat, Fringe, and geocode
-request lines have the same fields and the same block form.
+Every outgoing HTTP read calls ``log_request``, and the server calls
+``log_incoming`` for each incoming request. Both use the same block form,
+with a direction line first.
 """
 
 import logging
@@ -83,23 +84,28 @@ def format_kv(event: str, fields: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_request(method: str, url: str, **fields: Any) -> str:
-    """Return an HTTP request as an aligned ``METHOD  URL`` line plus fields.
+def format_request(direction: str, method: str, url: str, **fields: Any) -> str:
+    """Return an HTTP call as a direction line and an aligned method block.
 
-    The method sits in the key column and the URL is its value, so the URL and
-    every field value start in the same column. Example::
+    The direction line comes first, so incoming and outgoing calls are easy
+    to tell apart. The method sits in the key column and the URL is its
+    value. Example::
 
+        outgoing
         GET       https://api.example.com/items
         status    200
         reason    OK
 
+    :param direction: ``"incoming"`` or ``"outgoing"``.
     :param method: HTTP method, such as ``"GET"``.
     :param url: Request URL.
     :param fields: Further values, printed in the given order, one per line.
     :return: Text for the log handler.
     """
     rows = {method: url, **fields}
-    return "\n".join(_kv_line(key, value) for key, value in rows.items())
+    block = [direction]
+    block += [_kv_line(key, value) for key, value in rows.items()]
+    return "\n".join(block)
 
 
 def log_kv(emit: Callable[..., None], event: str, /, **fields: Any) -> None:
@@ -126,7 +132,20 @@ def log_request(
     :param url: Request URL.
     :param fields: Further values, printed in the given order, one per line.
     """
-    emit(format_request(method, url, **fields))
+    emit(format_request("outgoing", method, url, **fields))
+
+
+def log_incoming(
+    emit: Callable[..., None], method: str, url: str, /, **fields: Any
+) -> None:
+    """Log one incoming HTTP request, with its status and other fields below.
+
+    :param emit: Bound logger method, such as ``LOGGER.info``.
+    :param method: HTTP method, such as ``"GET"``.
+    :param url: Request path, with its query string.
+    :param fields: Further values, printed in the given order, one per line.
+    """
+    emit(format_request("incoming", method, url, **fields))
 
 
 def setup_logging(level: int | str = logging.INFO) -> None:

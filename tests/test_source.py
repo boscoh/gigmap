@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -210,6 +211,20 @@ def test_each_site_serves_its_own_page(
     assert '<title>Melb Fringe Gig Map</title>' in fringe.text
     assert 'window.API_BASE = "/api/fringe";' in fringe.text
 
+
+
+def test_an_incoming_request_is_logged(
+    client: tuple[TestClient, FakeSource], caplog: pytest.LogCaptureFixture
+) -> None:
+    http, _ = client
+    caplog.set_level(logging.INFO, logger="gigmap.server")
+
+    response = http.get("/")
+
+    assert response.status_code == 200
+    assert "incoming" in caplog.text
+    assert "GET" in caplog.text
+    assert "status" in caplog.text
 
 def test_a_read_answers_on_the_fringe_path(
     client: tuple[TestClient, FakeSource],

@@ -6,6 +6,7 @@ from gigmap.logger import (
     BlockFormatter,
     format_kv,
     format_request,
+    log_incoming,
     log_request,
 )
 
@@ -23,17 +24,19 @@ def test_format_kv_aligns_the_values() -> None:
 
 def test_format_request_aligns_the_fields() -> None:
     lines = format_request(
+        "outgoing",
         "GET",
         "https://api.example.com/items",
         status=200,
         reason="OK",
     ).splitlines()
 
-    assert lines[0].startswith("GET")
-    assert lines[0].endswith("https://api.example.com/items")
-    assert lines[1].startswith("status")
-    assert lines[2].startswith("reason")
-    assert lines[2].endswith("OK")
+    assert lines[0] == "outgoing"
+    assert lines[1].startswith("GET")
+    assert lines[1].endswith("https://api.example.com/items")
+    assert lines[2].startswith("status")
+    assert lines[3].startswith("reason")
+    assert lines[3].endswith("OK")
 
 
 def test_log_request_emits_the_request_block() -> None:
@@ -41,7 +44,27 @@ def test_log_request_emits_the_request_block() -> None:
 
     log_request(messages.append, "GET", "https://x", status=200, reason="OK")
 
-    assert messages == [format_request("GET", "https://x", status=200, reason="OK")]
+    assert messages == [
+        format_request("outgoing", "GET", "https://x", status=200, reason="OK")
+    ]
+
+
+def test_log_incoming_emits_the_request_block() -> None:
+    messages: list[str] = []
+
+    log_incoming(
+        messages.append, "GET", "/api/beat/events", status=200, client="1.2.3.4"
+    )
+
+    assert messages == [
+        format_request(
+            "incoming",
+            "GET",
+            "/api/beat/events",
+            status=200,
+            client="1.2.3.4",
+        )
+    ]
 
 
 def test_the_formatter_indents_later_lines() -> None:
