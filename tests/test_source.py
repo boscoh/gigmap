@@ -273,7 +273,12 @@ def test_the_removed_reads_answer_404(
     """One read serves the page, so the old reads go."""
     http, _ = client
 
-    for path in ("/api/beat/gigs", "/api/beat/times", "/api/beat/venues"):
+    for path in (
+        "/api/beat/gigs",
+        "/api/beat/times",
+        "/api/beat/venue",
+        "/api/beat/venues",
+    ):
         response = http.get(path, params=PARAMS)
         assert response.status_code == 404, path
 
@@ -354,23 +359,6 @@ def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
     response = http.get("/api/beat/events", params=PARAMS)
 
     assert response.headers.get("x-accel-buffering") == "no"
-
-def test_venue_route_uses_the_source(
-    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    http, _ = client
-    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-
-    response = http.get(
-        "/api/beat/venue",
-        params={"venue_url": "https://beat.com.au/directory/venue/"},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == "Venue"
-    assert data["latitude"] is None
-
 
 
 def test_the_event_stream_answers_a_failed_venue_line(
@@ -463,7 +451,6 @@ def test_a_blocked_venue_holds_no_other_line(
     assert lines[0]["venue"]["venue_url"] == SECOND_VENUE_URL
 
 
-
 def test_a_damaged_date_answers_400(
     client: tuple[TestClient, FakeSource],
 ) -> None:
@@ -476,15 +463,6 @@ def test_a_damaged_date_answers_400(
 
     assert response.status_code == 400
     assert fake.calls == []
-
-def test_a_bad_url_answers_400(client: tuple[TestClient, FakeSource]) -> None:
-    http, fake = client
-    fake.venue_error = sources.SourceUrlError("bad url")
-
-    response = http.get("/api/beat/venue", params={"venue_url": "https://x.test/y/"})
-
-    assert response.status_code == 400
-    assert response.json() == {"detail": "bad url"}
 
 
 def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> None:

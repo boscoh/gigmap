@@ -600,8 +600,6 @@
 
                 div.venue-name(v-if="selectedGig")
                   | {{ selectedGig.venue }}
-                .text-muted.small(v-if="venue.loading")
-                  | Looking up the address...
                 .text-danger.small(v-if="venue.error")
                   | {{ venue.error }}
                 .small.venue-address(v-if="venue.data && venue.data.address")
@@ -656,8 +654,6 @@
             | Click a row to focus a venue.
           div.venue-name(v-if="selectedGig")
             | {{ selectedGig.venue }}
-          .text-muted.small(v-if="venue.loading")
-            | Looking up the address...
           .text-danger.small(v-if="venue.error")
             | {{ venue.error }}
           .small.venue-address(v-if="venue.data && venue.data.address")
@@ -891,11 +887,6 @@
         return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     }
 
-    async function fetchVenue(venueUrl) {
-        const searchParams = {venue_url: venueUrl};
-        return window.api.get("venue", {searchParams, timeout: 60000}).json();
-    }
-
     // Yield one NDJSON line at a time from a streaming response.
     async function* readNdjsonLines(response) {
         if (!response.body) {
@@ -955,7 +946,7 @@
         const loading = ref(false);
         const error = ref("");
         const selectedGig = ref(null);
-        const venue = ref({loading: false, data: null, error: ""});
+        const venue = ref({data: null, error: ""});
         const streaming = ref(false);
         const markerCount = ref(0);
         let eventRun = 0;
@@ -967,7 +958,7 @@
         });
         const activeVenueUrl = ref("");
         const venueInfo = new Map();
-        let venueRequest = 0;
+        const venueErrors = new Map();
         let map = null;
         const markers = new Map();
 
@@ -1043,7 +1034,7 @@
             loading.value = true;
             error.value = "";
             selectedGig.value = null;
-            venue.value = {loading: false, data: null, error: ""};
+            venue.value = {data: null, error: ""};
             if (map) {
                 for (const marker of markers.values()) {
                     marker.remove();
@@ -1053,6 +1044,7 @@
             markerCount.value = 0;
             activeVenueUrl.value = "";
             venueInfo.clear();
+            venueErrors.clear();
             gigs.value = [];
             list.setRoom(0);
             loadEvents();
@@ -1378,7 +1370,7 @@
             }
             const data = venueInfo.get(venueUrl);
             if (data) {
-                venue.value = {loading: false, data, error: ""};
+                venue.value = {data, error: ""};
             }
             // The venue name and the address changed the height above the
             // list. Measure after Vue writes the change to the page.
@@ -1519,7 +1511,10 @@
                     if (update.venue) {
                         addMarker(update.venue);
                     } else if (update.error) {
-                        console.error("venue lookup failed", gig ? gig.venue_url : "", update.error);
+                        // Keep the reason, so a click can show it.
+                        if (gig && gig.venue_url) {
+                            venueErrors.set(gig.venue_url, update.error);
+                        }
                     }
                     // Let the browser paint, so a row and its marker appear
                     // together, even when one chunk holds many lines.
@@ -1568,8 +1563,8 @@
             // The tap fires touchstart before click. Clear the mark, so a
             // later touch can cancel the move below.
             touched = false;
-            // The summary above the list changes height at each step of the
-            // lookup, so the row is put back after Vue writes the change.
+            // The venue changes the height of the summary above the list, so
+            // the row is put back after Vue writes the change.
             const holdRow = async () => {
                 if (!row || touched) {
                     return;
@@ -1578,45 +1573,26 @@
                 list.reveal(row, "top");
             };
             if (!gig.venue_url) {
-                venue.value = {
-                    loading: false,
-                    data: null,
-                    error: "This gig has no venue link.",
-                };
+                venue.value = {data: null, error: "This gig has no venue link."};
                 await holdRow();
                 return;
             }
-            venueRequest += 1;
-            const requestId = venueRequest;
-            // The map load already holds the venue, so a click costs no
-            // request.
+            // The stream holds the venue of every row, so a click costs no
+            // request. A failed venue read keeps its reason for the click.
             const cached = venueInfo.get(gig.venue_url);
             if (cached) {
-                venue.value = {loading: false, data: cached, error: ""};
+                venue.value = {data: cached, error: ""};
                 showOnMap(cached);
-                await holdRow();
-                return;
+            } else {
+                const reason = venueErrors.get(gig.venue_url);
+                venue.value = {
+                    data: null,
+                    error: reason
+                        ? `Could not load the venue: ${reason}`
+                        : "Could not load the venue.",
+                };
             }
-            venue.value = {loading: true, data: null, error: ""};
             await holdRow();
-            try {
-                const data = await fetchVenue(gig.venue_url);
-                if (venueRequest !== requestId) {
-                    return;
-                }
-                venue.value = {loading: false, data, error: ""};
-                await holdRow();
-                showOnMap(data);
-            } catch (problem) {
-                if (venueRequest === requestId) {
-                    venue.value = {
-                        loading: false,
-                        data: null,
-                        error: `Could not load the venue: ${problem.message}`,
-                    };
-                    await holdRow();
-                }
-            }
         }
 
         onMounted(() => {

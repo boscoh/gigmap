@@ -148,6 +148,8 @@ serves one load.
   `markerCount` venues. The page knows no total before the stream ends, so
   the `n/m` form goes.
 - `venueInfo` still holds each venue, so a click on a row costs no request.
+- `venueErrors` holds the reason for a failed venue read, so the click shows the
+  reason and makes no request.
 
 ## Latency
 
@@ -173,7 +175,7 @@ with a slower spread of rows on a cold cache.
 | The failure | The result |
 | --- | --- |
 | a detail read fails | `gig.time` is null, and `venue` is the usual object |
-| a venue read fails | `venue` is null, and `error` holds the text |
+| a venue read fails | `venue` is null, and `error` holds the text. The page stores the error, and a click shows it with no request |
 | the gig list read fails | 502, and no stream |
 
 A `SourceError` text goes to the page. Any other error becomes the text "the
@@ -199,20 +201,20 @@ on disk until someone removes the file.
 
 | File | The change |
 | --- | --- |
-| `gigmap/server.py` | add `event_stream`, `event_lines`, `event_line`. Remove `gig_list`, `gig_times`, `venue_stream`, `venue_answer`, and `venue_failure` |
+| `gigmap/server.py` | add `event_stream`, `event_lines`, `event_line`. Remove `gig_list`, `gig_times`, `venue_stream`, `venue_answer`, `venue_failure`, and the `/venue` route |
 | `gigmap/sources.py`, `gigmap/geocode.py` | remove `Venue.display_name`, `map_embed_url`, `map_url`, and `geocode.map_urls`. The page reads none of them |
-| `gigmap/index.html` | replace `loadTimes` and `mapAllVenues` with `loadEvents`. Remove `stopTimes`, `stopVenues`, `fetchGigs`, and `loadRun` |
+| `gigmap/index.html` | replace `loadTimes` and `mapAllVenues` with `loadEvents`. Remove `stopTimes`, `stopVenues`, `fetchGigs`, `fetchVenue`, the `/venue` fallback, and `loadRun` |
 | `tests/test_source.py` | add the tests below. Remove the tests of the two old routes |
 
 `/api/<source>/gigs` goes too. The page never calls it, and the event stream
 already reads the day cache. The tests use `/events` for the range checks.
 
-`/api/<source>/venue` stays. A click on a row uses it when the venue read
-failed, or when the stream stopped before that row.
+`/api/<source>/venue` goes too. It was a retry for a failed venue read, and
+a retry is not a goal. The page stores the error, so a click can show it.
 
 A deleted route answers 404. The server reads `index.html` on each request, so
 a reload gets the new page. A browser that holds the old page shows a 404 for
-`/times` until a reload.
+`/times` or `/venue` until a reload.
 
 ## The tests
 
@@ -227,7 +229,7 @@ a reload gets the new page. A browser that holds the old page shows a 404 for
 - A line leaves the stream only after the venue read of its gig finishes.
 - A slow venue does not hold the line of a gig with a fast venue. The test
   blocks one venue read, then reads the lines of the other gigs first.
-- The removed reads answer 404: `/gigs`, `/times`, and `/venues`.
+- The removed reads answer 404: `/gigs`, `/times`, `/venue`, and `/venues`.
 
 ## The alternatives
 

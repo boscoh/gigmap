@@ -132,11 +132,6 @@ async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource
 SourceDep = Annotated[sources.GigSource, Depends(source_dependency)]
 
 
-@app.exception_handler(sources.SourceUrlError)
-async def source_url_error(_: Request, error: sources.SourceUrlError) -> JSONResponse:
-    return JSONResponse(status_code=400, content={"detail": str(error)})
-
-
 @app.exception_handler(sources.SourceError)
 async def source_error(_: Request, error: sources.SourceError) -> JSONResponse:
     return JSONResponse(status_code=502, content={"detail": str(error)})
@@ -310,11 +305,6 @@ async def event_stream(
         media_type="application/x-ndjson",
         headers=STREAM_HEADERS,
     )
-
-
-@api_router.get("/venue")
-async def venue(source: SourceDep, venue_url: str = Query(...)) -> sources.Venue:
-    return await source.venue(venue_url)
 
 
 def mount_sources(
