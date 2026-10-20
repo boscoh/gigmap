@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -18,6 +19,9 @@ from fastapi.responses import (
 )
 
 from gigmap import beat, fringe, sources, stores
+from gigmap.logger import log_kv, setup_logging
+
+LOGGER = logging.getLogger(__name__)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PACKAGE_DIR.parent
@@ -68,12 +72,13 @@ async def cleanup_loop() -> None:
         try:
             run_cleanup()
         except Exception as error:
-            print(f"cleanup failed: {error}", flush=True)
+            log_kv(LOGGER.warning, "cleanup failed", error=error)
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    setup_logging()
     task = asyncio.create_task(cleanup_loop())
     try:
         yield
@@ -347,17 +352,21 @@ def serve(
     :param reload: restart the server after a change to a .py file
     """
     use_data_dir(data_dir)
+    setup_logging()
 
     if reload:
         uvicorn.run(
             "gigmap.server:app",
             host=host,
             port=port,
+            log_config=None,
             reload=True,
             reload_dirs=[str(ROOT_DIR)],
         )
     else:
-        uvicorn.run("gigmap.server:app", host=host, port=port)
+        uvicorn.run(
+            "gigmap.server:app", host=host, port=port, log_config=None
+        )
 
 
 def use_data_dir(data_dir: Path | None) -> None:
@@ -378,21 +387,24 @@ def run_cleanup(
     dry_run: bool = False,
     quiet: bool = False,
 ) -> stores.CleanReport:
-    """Remove the old data files and print the result."""
+    """Remove the old data files and log the result."""
     report = stores.DataStores(data_dir).clean(time.time(), gig_days, dry_run)
     if quiet:
         return report
     verb = "would remove" if dry_run else "removed"
-    print(
-        f"{verb} {report.days} day files and {report.gigs} gig files, "
-        f"{format_size(report.size)}",
-        flush=True,
+    log_kv(
+        LOGGER.info,
+        verb,
+        days=report.days,
+        gigs=report.gigs,
+        size=format_size(report.size),
     )
     if report.skipped:
-        print(
-            f"kept {report.skipped} files younger than "
-            f"{stores.DAYS_CACHE_SECONDS} seconds",
-            flush=True,
+        log_kv(
+            LOGGER.info,
+            "kept recent files",
+            count=report.skipped,
+            seconds=stores.DAYS_CACHE_SECONDS,
         )
     return report
 
@@ -409,10 +421,11 @@ def clean(
 
     :param data_dir: directory for the saved files
     :param gig_days: keep a gig time file for this many days
-    :param dry_run: print the plan and remove nothing
-    :param quiet: print nothing
+    :param dry_run: log the plan and remove nothing
+    :param quiet: log nothing
     """
     use_data_dir(data_dir)
+    setup_logging()
     run_cleanup(gig_days, dry_run, quiet)
 
 

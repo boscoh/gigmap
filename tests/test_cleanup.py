@@ -1,6 +1,7 @@
 """Tests for the data cleanup, the loop, and the lifespan."""
 
 import asyncio
+import logging
 import os
 import time
 from pathlib import Path
@@ -76,20 +77,30 @@ def test_a_recent_file_is_skipped(data_dir: Path) -> None:
     assert report.skipped == 1
 
 
-def test_run_cleanup_prints_the_report(data_dir: Path, capsys: pytest.CaptureFixture) -> None:
+def test_run_cleanup_logs_the_report(
+    data_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", OLD)
+    caplog.set_level(logging.INFO, logger="gigmap.server")
 
     server.run_cleanup()
 
-    assert "removed 1 day files and 0 gig files" in capsys.readouterr().out
+    message = caplog.messages[0]
+    assert "removed" in message
+    assert "days" in message
+    assert "gigs" in message
+    assert "size" in message
 
 
-def test_run_cleanup_is_quiet_on_request(data_dir: Path, capsys: pytest.CaptureFixture) -> None:
+def test_run_cleanup_is_quiet_on_request(
+    data_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", OLD)
+    caplog.set_level(logging.INFO, logger="gigmap.server")
 
     server.run_cleanup(quiet=True)
 
-    assert capsys.readouterr().out == ""
+    assert caplog.records == []
 
 
 def test_the_loop_repeats(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,6 +129,7 @@ def test_the_lifespan_starts_and_cancels_the_loop(monkeypatch: pytest.MonkeyPatc
             stopped.set()
 
     monkeypatch.setattr(server, "cleanup_loop", fake_loop)
+    monkeypatch.setattr(server, "setup_logging", lambda: None)
 
     async def run() -> None:
         async with server.lifespan(server.app):
@@ -128,7 +140,9 @@ def test_the_lifespan_starts_and_cancels_the_loop(monkeypatch: pytest.MonkeyPatc
     asyncio.run(run())
 
 
-def test_a_bad_loop_iteration_does_not_stop_the_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_bad_loop_iteration_does_not_stop_the_loop(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     calls: list[int] = []
 
     def flaky(*args: object, **kwargs: object) -> None:
@@ -146,3 +160,4 @@ def test_a_bad_loop_iteration_does_not_stop_the_loop(monkeypatch: pytest.MonkeyP
     asyncio.run(run())
 
     assert len(calls) >= 2
+    assert "cleanup failed" in caplog.text

@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
 
 from gigmap import sources
+from gigmap.logger import log_kv
 
 BEAT_URL = "https://beat.com.au/gig-guide/"
 
@@ -257,7 +258,7 @@ class BeatSource:
                         url, params=params, headers=HEADERS, impersonate=target
                     )
                 except curl_requests.RequestsError as error:
-                    LOGGER.warning("cannot reach beat.com.au: %s", error)
+                    log_kv(LOGGER.warning, "beat unreachable", error=error)
                     raise sources.SourceError(
                         f"cannot reach beat.com.au: {error}"
                     ) from error
@@ -267,14 +268,14 @@ class BeatSource:
                     return response.text
                 status = response.status_code
                 mitigated = response.headers.get("cf-mitigated")
-                LOGGER.warning(
-                    "beat.com.au answered status %s for %s "
-                    "(cf-mitigated=%s, cf-ray=%s, attempt %d)",
-                    status,
-                    url,
-                    mitigated,
-                    response.headers.get("cf-ray"),
-                    attempts,
+                log_kv(
+                    LOGGER.warning,
+                    "beat response",
+                    status=status,
+                    url=url,
+                    cf_mitigated=mitigated,
+                    cf_ray=response.headers.get("cf-ray"),
+                    attempt=attempts,
                 )
                 # A challenge belongs to one fingerprint. Try the next target.
                 if mitigated is not None:

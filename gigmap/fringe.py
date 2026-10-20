@@ -113,6 +113,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from gigmap import sources
+from gigmap.logger import log_kv
 
 SITE_URL = "https://www.melbournefringe.com.au"
 SITE_HOST = urlsplit(SITE_URL).netloc
@@ -641,18 +642,19 @@ class FringeSource:
                     method, url, params=params, json=body, headers=headers
                 )
             except httpx.HTTPError as error:
-                LOGGER.warning("cannot reach melbournefringe.com.au: %s", error)
+                log_kv(LOGGER.warning, "fringe unreachable", error=error)
                 raise sources.SourceError(
                     f"cannot reach melbournefringe.com.au: {error}"
                 ) from error
             if response.status_code == 200:
                 return response
             status = response.status_code
-            LOGGER.warning(
-                "melbournefringe.com.au answered status %s for %s (attempt %d)",
-                status,
-                url,
-                attempt,
+            log_kv(
+                LOGGER.warning,
+                "fringe response",
+                status=status,
+                url=url,
+                attempt=attempt,
             )
             # A 5xx is a gateway or origin fault. Retry the same read.
             if status < 500 or attempt >= SERVER_ERROR_ATTEMPTS:
@@ -753,10 +755,7 @@ class FringeSource:
                     EVENT_CONTENT_TYPE, EVENT_PAGE_SIZE, EVENT_FIELDS
                 )
             except sources.SourceError as error:
-                LOGGER.warning(
-                    "the event list failed, so a gig holds no genre or price: %s",
-                    error,
-                )
+                log_kv(LOGGER.warning, "event list failed", error=error)
                 return {}
             index = {}
             for row in rows:
@@ -783,9 +782,7 @@ class FringeSource:
                     VENUE_CONTENT_TYPE, VENUE_PAGE_SIZE
                 )
             except sources.SourceError as error:
-                LOGGER.warning(
-                    "the venue list failed, so a venue has no address: %s", error
-                )
+                log_kv(LOGGER.warning, "venue list failed", error=error)
                 return {}
             index = {}
             for row in rows:
