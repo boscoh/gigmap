@@ -319,7 +319,6 @@ dependencies = [
     { name = "httpx" },
     { name = "lxml" },
     { name = "pydantic" },
-    { name = "rich" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -337,7 +336,6 @@ requires-dist = [
     { name = "httpx" },
     { name = "lxml" },
     { name = "pydantic" },
-    { name = "rich", specifier = ">=15.0.0" },
     { name = "uvicorn", extras = ["standard"] },
 ]
 

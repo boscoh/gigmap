@@ -552,12 +552,18 @@ class _FakeResponse:
     """A curl_cffi response with the fields the source reads."""
 
     def __init__(
-        self, status_code: int, text: str = "", mitigated: str | None = None
+        self,
+        status_code: int,
+        text: str = "",
+        mitigated: str | None = None,
+        url: str = "https://beat.com.au/gig-guide/",
+        reason: str = "OK",
     ) -> None:
         self.status_code = status_code
         self.text = text
         self.headers = {"cf-mitigated": mitigated} if mitigated else {}
-
+        self.url = url
+        self.reason = reason
 
 class _FakeSession:
     """A curl_cffi session that answers from a saved table."""

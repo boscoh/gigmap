@@ -8,15 +8,19 @@ See https://operations.osmfoundation.org/policies/nominatim/
 """
 
 import asyncio
+import logging
 import time
 
 import httpx
 
 from gigmap import sources
+from gigmap.logger import log_request
 
 GEOCODE_SECONDS = 1.1
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_HEADERS = {"User-Agent": "gigmap/0.1 (personal Melbourne gig guide)"}
+
+LOGGER = logging.getLogger(__name__)
 
 _geocode_lock = asyncio.Lock()
 _last_geocode = 0.0
@@ -43,7 +47,16 @@ async def geocode(query: str) -> dict | None:
                     },
                     headers=NOMINATIM_HEADERS,
                 )
-        except httpx.HTTPError:
+                level = LOGGER.info if response.status_code == 200 else LOGGER.warning
+                log_request(
+                    level,
+                    "GET",
+                    str(response.url),
+                    status=response.status_code,
+                    reason=response.reason_phrase,
+                )
+        except httpx.HTTPError as error:
+            log_request(LOGGER.warning, "GET", NOMINATIM_URL, query=query, error=error)
             response = None
         _last_geocode = time.time()
 

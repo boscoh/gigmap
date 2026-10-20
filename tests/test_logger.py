@@ -2,23 +2,16 @@
 
 import logging
 
-from rich.markup import render
-
 from gigmap.logger import (
-    HTTPX_REQUEST,
-    HttpRequestFilter,
+    BlockFormatter,
     format_kv,
     format_request,
+    log_request,
 )
 
 
-def plain(markup: str) -> list[str]:
-    """Return the rendered lines of one log message."""
-    return str(render(markup)).splitlines()
-
-
 def test_format_kv_aligns_the_values() -> None:
-    lines = plain(format_kv("beat response", {"status": 503, "url": "https://x"}))
+    lines = format_kv("beat response", {"status": 503, "url": "https://x"}).splitlines()
 
     assert lines[0] == "beat response"
     assert lines[1].startswith("status")
@@ -29,34 +22,41 @@ def test_format_kv_aligns_the_values() -> None:
 
 
 def test_format_request_aligns_the_fields() -> None:
-    lines = plain(
-        format_request(
-            "GET",
-            "https://api.example.com/items",
-            status="HTTP/1.1 200 OK",
-        )
-    )
+    lines = format_request(
+        "GET",
+        "https://api.example.com/items",
+        status=200,
+        reason="OK",
+    ).splitlines()
 
     assert lines[0].startswith("GET")
     assert lines[0].endswith("https://api.example.com/items")
     assert lines[1].startswith("status")
-    assert lines[1].endswith("HTTP/1.1 200 OK")
+    assert lines[2].startswith("reason")
+    assert lines[2].endswith("OK")
 
 
-def test_the_http_filter_rewrites_an_httpx_line() -> None:
+def test_log_request_emits_the_request_block() -> None:
+    messages: list[str] = []
+
+    log_request(messages.append, "GET", "https://x", status=200, reason="OK")
+
+    assert messages == [format_request("GET", "https://x", status=200, reason="OK")]
+
+
+def test_the_formatter_indents_later_lines() -> None:
+    message = format_kv("cleanup failed", {"reason": "disk is busy"})
     record = logging.LogRecord(
-        name="httpx",
+        name="gigmap.server",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
-        msg=HTTPX_REQUEST,
-        args=("POST", "https://api.example.com/items", "HTTP/1.1", 200, "OK"),
+        msg=message,
+        args=(),
         exc_info=None,
     )
 
-    assert HttpRequestFilter().filter(record) is True
-    lines = plain(str(record.msg))
+    lines = BlockFormatter("[%(levelname)s] %(message)s").format(record).splitlines()
 
-    assert lines[0].startswith("POST")
-    assert lines[0].endswith("https://api.example.com/items")
-    assert any("200 OK" in line for line in lines)
+    assert lines[0] == "[INFO] cleanup failed"
+    assert lines[1] == " " * len("[INFO] ") + message.splitlines()[1]

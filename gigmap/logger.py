@@ -1,28 +1,23 @@
-"""Rich logging setup for the gigmap server.
+"""Logging setup for the gigmap server.
 
-Rich formatting is installed on the root logger. Library loggers get a level,
-and any handlers they installed (for example by uvicorn) are dropped so their
-records propagate to the root Rich handler instead.
+A plain text handler is installed on the root logger. Library loggers get a
+level, and any handlers they installed (for example by uvicorn) are dropped so
+their records propagate to the root handler instead.
 
 Application code logs through ``log_kv``, which prints an event name and then
 its fields as a block of key/value lines. Keys are left-justified, so every
 value starts in the same column and a block is quick to scan.
 
-HTTP request lines from httpx and the uvicorn access log are rewritten into the
-same block form, so a request shows its method, URL, and status in one aligned
-column.
+Every HTTP read calls ``log_request``, so the beat, Fringe, and geocode
+request lines have the same fields and the same block form.
 """
 
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from rich.console import Console
-from rich.logging import RichHandler
-from rich.markup import escape
-
-# Levels for app and third-party loggers. httpx stays at INFO, so a Fringe
-# read logs one HTTP request line. The filter below rewrites that line.
+# Levels for app and third-party loggers. Each source logs its own request
+# lines, so the httpx request line stays off.
 LOGGER_LEVELS: dict[str, int] = {
     "__main__": logging.INFO,
     "gigmap": logging.INFO,
@@ -30,7 +25,7 @@ LOGGER_LEVELS: dict[str, int] = {
     "uvicorn.error": logging.INFO,
     "uvicorn.server": logging.INFO,
     "uvicorn.access": logging.WARNING,
-    "httpx": logging.INFO,
+    "httpx": logging.WARNING,
     "httpcore": logging.WARNING,
     "h11": logging.WARNING,
 }
@@ -40,10 +35,33 @@ LOGGER_LEVELS: dict[str, int] = {
 KEY_WIDTH = 10
 
 
+class BlockFormatter(logging.Formatter):
+    """Format a record, and align the later lines under its message."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        clone = logging.makeLogRecord(record.__dict__)
+        clone.msg = ""
+        clone.args = ()
+        clone.exc_info = None
+        clone.exc_text = None
+        clone.stack_info = None
+        prefix = super().format(clone)
+        indent = " " * len(prefix)
+        lines = message.splitlines() or [""]
+        block = [prefix + lines[0]]
+        block += [indent + line for line in lines[1:]]
+        if record.exc_info:
+            trace = self.formatException(record.exc_info)
+            block += [indent + line for line in trace.splitlines()]
+        if record.stack_info:
+            block += [indent + line for line in record.stack_info.splitlines()]
+        return "\n".join(block)
+
+
 def _kv_line(key: str, value: Any) -> str:
     """Return one ``key  value`` line, with the key in the key column."""
-    label = f"[cyan]{escape(key).ljust(KEY_WIDTH)}[/cyan]"
-    return f"{label}  {escape(str(value))}".rstrip()
+    return f"{key.ljust(KEY_WIDTH)}  {value}".rstrip()
 
 
 def format_kv(event: str, fields: dict[str, Any]) -> str:
@@ -58,9 +76,9 @@ def format_kv(event: str, fields: dict[str, Any]) -> str:
 
     :param event: Short event name, such as ``"beat response"``.
     :param fields: Fields, printed in the given order, one per line.
-    :return: Rich markup text for the log handler.
+    :return: Text for the log handler.
     """
-    lines = [f"[bold]{escape(event)}[/bold]"]
+    lines = [event]
     lines += [_kv_line(key, value) for key, value in fields.items()]
     return "\n".join(lines)
 
@@ -72,55 +90,16 @@ def format_request(method: str, url: str, **fields: Any) -> str:
     every field value start in the same column. Example::
 
         GET       https://api.example.com/items
-        status    HTTP/1.1 200 OK
+        status    200
+        reason    OK
 
     :param method: HTTP method, such as ``"GET"``.
     :param url: Request URL.
     :param fields: Further values, printed in the given order, one per line.
-    :return: Rich markup text for the log handler.
+    :return: Text for the log handler.
     """
     rows = {method: url, **fields}
     return "\n".join(_kv_line(key, value) for key, value in rows.items())
-
-
-# Loggers whose INFO records describe one finished HTTP request.
-HTTP_LOGGERS = ("httpx", "uvicorn.access")
-
-# Message templates of the HTTP request lines, with their ``%`` arguments.
-HTTPX_REQUEST = 'HTTP Request: %s %s "%s %d %s"'
-UVICORN_ACCESS = '%s - "%s %s HTTP/%s" %d'
-
-
-class HttpRequestFilter(logging.Filter):
-    """Rewrite third-party HTTP request lines as aligned key/value blocks.
-
-    httpx and the uvicorn access log pass the request parts as ``%`` arguments.
-    This filter reads those arguments and replaces the message, so a request
-    shows as ``METHOD  URL`` with its fields aligned below::
-
-        GET       https://api.example.com/items
-        status    HTTP/1.1 200 OK
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        args = record.args
-        if not isinstance(args, tuple) or len(args) != 5:
-            return True
-        if record.msg == HTTPX_REQUEST:
-            method, url, http_version, code, reason = args
-            fields = {"status": f"{http_version} {code} {reason}".strip()}
-        elif record.msg == UVICORN_ACCESS:
-            client, method, url, http_version, code = args
-            fields = {
-                "status": f"HTTP/{http_version} {code}",
-                "client": client,
-            }
-        else:
-            return True
-        record.msg = format_request(str(method), str(url), **fields)
-        record.args = ()
-        record.markup = True
-        return True
 
 
 def log_kv(emit: Callable[..., None], event: str, /, **fields: Any) -> None:
@@ -134,7 +113,7 @@ def log_kv(emit: Callable[..., None], event: str, /, **fields: Any) -> None:
     :param event: Short event name.
     :param fields: Field values, printed in the given order, one per line.
     """
-    emit(format_kv(event, fields), extra={"markup": True})
+    emit(format_kv(event, fields))
 
 
 def log_request(
@@ -147,11 +126,11 @@ def log_request(
     :param url: Request URL.
     :param fields: Further values, printed in the given order, one per line.
     """
-    emit(format_request(method, url, **fields), extra={"markup": True})
+    emit(format_request(method, url, **fields))
 
 
 def setup_logging(level: int | str = logging.INFO) -> None:
-    """Install Rich logging on the root logger and set library levels.
+    """Install plain text logging on the root logger and set library levels.
 
     Call as early as possible, before the server serves a request.
 
@@ -160,20 +139,21 @@ def setup_logging(level: int | str = logging.INFO) -> None:
     if isinstance(level, str):
         level = getattr(logging, level.upper())
 
-    rich_handler = RichHandler(
-        console=Console(stderr=True),
-        log_time_format="[%X]",
-        # Drop the path column so ``log_kv`` lines keep their alignment.
-        show_path=False,
+    root_handler = logging.StreamHandler()
+    root_handler.setLevel(level)
+    root_handler.setFormatter(
+        BlockFormatter(
+            "[%(asctime)s] %(levelname)-8s %(message)s",
+            datefmt="%X",
+        )
     )
-    rich_handler.setLevel(level)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
     for handler in root_logger.handlers[:]:
         handler.close()
         root_logger.removeHandler(handler)
-    root_logger.addHandler(rich_handler)
+    root_logger.addHandler(root_handler)
 
     for name, logger_level in LOGGER_LEVELS.items():
         logger = logging.getLogger(name)
@@ -183,12 +163,3 @@ def setup_logging(level: int | str = logging.INFO) -> None:
         # uvicorn sets propagate=False, which would black-hole its records once
         # the handlers above are removed.
         logger.propagate = True
-
-    # Rewrite HTTP request lines from the client library and the access log.
-    # A filter runs on the record before any handler sees it.
-    for name in HTTP_LOGGERS:
-        logger = logging.getLogger(name)
-        logger.filters = [
-            item for item in logger.filters if not isinstance(item, HttpRequestFilter)
-        ]
-        logger.addFilter(HttpRequestFilter())

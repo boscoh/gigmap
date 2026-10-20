@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
 
 from gigmap import sources
-from gigmap.logger import log_kv
+from gigmap.logger import log_request
 
 BEAT_URL = "https://beat.com.au/gig-guide/"
 
@@ -115,7 +115,6 @@ def parse_gig_detail(html: str, detail_url: str) -> sources.GigDetail:
     return sources.GigDetail(detail_url=detail_url, time=normalise_time(time_text))
 
 
-
 FREE_PRICE = "Free"
 # The category that beat uses for an event with no ticket price.
 FREE_CATEGORY = "Free Events"
@@ -177,8 +176,7 @@ def parse_gigs(html: str) -> list[sources.Gig]:
         price = card.select_one(".gig-price")
         ticket = card.select_one(".gig-ticket a")
         categories = [
-            badge.get_text(strip=True)
-            for badge in card.select(".gig-category .badge")
+            badge.get_text(strip=True) for badge in card.select(".gig-category .badge")
         ]
         price_text = price.get_text(" ", strip=True) if price else None
         ticket_url = attribute(ticket, "href") if ticket else None
@@ -258,21 +256,30 @@ class BeatSource:
                         url, params=params, headers=HEADERS, impersonate=target
                     )
                 except curl_requests.RequestsError as error:
-                    log_kv(LOGGER.warning, "beat unreachable", error=error)
+                    log_request(LOGGER.warning, "GET", url, error=error)
                     raise sources.SourceError(
                         f"cannot reach beat.com.au: {error}"
                     ) from error
-                if response.status_code == 200:
+                status = response.status_code
+                if status == 200:
+                    log_request(
+                        LOGGER.info,
+                        "GET",
+                        response.url or url,
+                        status=status,
+                        reason=response.reason,
+                        attempt=attempts,
+                    )
                     # Keep the target that passed, so the later reads start there.
                     _current_target = target
                     return response.text
-                status = response.status_code
                 mitigated = response.headers.get("cf-mitigated")
-                log_kv(
+                log_request(
                     LOGGER.warning,
-                    "beat response",
+                    "GET",
+                    response.url or url,
                     status=status,
-                    url=url,
+                    reason=response.reason,
                     cf_mitigated=mitigated,
                     cf_ray=response.headers.get("cf-ray"),
                     attempt=attempts,

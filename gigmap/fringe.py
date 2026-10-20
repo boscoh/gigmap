@@ -113,7 +113,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from gigmap import sources
-from gigmap.logger import log_kv
+from gigmap.logger import log_kv, log_request
 
 SITE_URL = "https://www.melbournefringe.com.au"
 SITE_HOST = urlsplit(SITE_URL).netloc
@@ -208,9 +208,7 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 
 DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 TIME_RE = re.compile(r"T(?P<hour>\d{2}):(?P<minute>\d{2})")
-TIME_ORDER_RE = re.compile(
-    r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?P<meridiem>am|pm)"
-)
+TIME_ORDER_RE = re.compile(r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?P<meridiem>am|pm)")
 # A slug can hold a non-ASCII character, for example "obang-오방".
 EVENT_PATH_RE = re.compile(r"/whats-on/events/(?P<slug>[^/?#]+)/?$")
 VENUE_PATH_RE = re.compile(r"/whats-on/venues/(?P<slug>[^/?#]+)/?$")
@@ -275,9 +273,7 @@ def days_of_range(start_date: str, end_date: str) -> list[str]:
         raise sources.SourceError("end_date is before start_date")
     count = (end - start).days + 1
     if count > MAX_RANGE_DAYS:
-        raise sources.SourceError(
-            f"the range holds more than {MAX_RANGE_DAYS} days"
-        )
+        raise sources.SourceError(f"the range holds more than {MAX_RANGE_DAYS} days")
     return [(start + timedelta(days=step)).isoformat() for step in range(count)]
 
 
@@ -589,7 +585,6 @@ def parse_venue(row: dict[str, Any]) -> sources.Venue | None:
     )
 
 
-
 class FringeSource:
     """Read the data from the Melbourne Fringe API through one connection pool.
 
@@ -642,27 +637,26 @@ class FringeSource:
                     method, url, params=params, json=body, headers=headers
                 )
             except httpx.HTTPError as error:
-                log_kv(LOGGER.warning, "fringe unreachable", error=error)
+                log_request(LOGGER.warning, method, url, error=error)
                 raise sources.SourceError(
                     f"cannot reach melbournefringe.com.au: {error}"
                 ) from error
-            if response.status_code == 200:
-                return response
             status = response.status_code
-            log_kv(
-                LOGGER.warning,
-                "fringe response",
+            log_request(
+                LOGGER.info if status == 200 else LOGGER.warning,
+                method,
+                str(response.url),
                 status=status,
-                url=url,
+                reason=response.reason_phrase,
                 attempt=attempt,
             )
+            if status == 200:
+                return response
             # A 5xx is a gateway or origin fault. Retry the same read.
             if status < 500 or attempt >= SERVER_ERROR_ATTEMPTS:
                 break
             await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
-        raise sources.SourceError(
-            f"melbournefringe.com.au answered status {status}"
-        )
+        raise sources.SourceError(f"melbournefringe.com.au answered status {status}")
 
     async def _json(
         self,
@@ -778,9 +772,7 @@ class FringeSource:
             if self._venues is not None:
                 return self._venues
             try:
-                rows = await self._content_rows(
-                    VENUE_CONTENT_TYPE, VENUE_PAGE_SIZE
-                )
+                rows = await self._content_rows(VENUE_CONTENT_TYPE, VENUE_PAGE_SIZE)
             except sources.SourceError as error:
                 log_kv(LOGGER.warning, "venue list failed", error=error)
                 return {}
