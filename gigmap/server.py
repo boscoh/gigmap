@@ -70,6 +70,9 @@ VENUE_FAILURE_TEXT = "the venue lookup failed"
 # nginx holds a small stream in its buffers until the source closes it.
 # This header makes nginx pass each line to the page at once.
 STREAM_HEADERS = {"X-Accel-Buffering": "no"}
+# The header holds the count of the range, so the page shows the
+# progress before the first line of the stream.
+TOTAL_HEADER = "X-Gig-Total"
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -352,7 +355,7 @@ async def event_stream(
     return StreamingResponse(
         event_lines(source, gigs),
         media_type="application/x-ndjson",
-        headers=STREAM_HEADERS,
+        headers={**STREAM_HEADERS, TOTAL_HEADER: str(len(gigs))},
     )
 
 

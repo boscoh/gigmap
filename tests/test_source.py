@@ -317,6 +317,19 @@ def test_the_event_stream_answers_one_line_for_each_gig(
     }
 
 
+def test_the_event_stream_sends_the_count_in_a_header(
+    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The header holds the count, so the page shows it before line one."""
+    http, fake = client
+    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
+    fake.gig_venue_urls = [VENUE_URL, SECOND_VENUE_URL]
+
+    response = http.get("/api/beat/events", params=PARAMS)
+
+    assert response.headers[server.TOTAL_HEADER] == "2"
+
+
 def test_the_event_stream_reads_a_shared_venue_one_time(
     client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
 ) -> None:

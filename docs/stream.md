@@ -143,10 +143,10 @@ serves one load.
   log `update.error` when it is present, call `nextPaint()`, and fit the map
   at 5 moves a second.
 - `addMarker` holds one map from `venue_url` to the marker, so five lines of
-  one venue add one marker. `markerCount` uses the size of that map.
-- The summary counts what it has: `gigs.value.length` gigs and
-  `markerCount` venues. The page knows no total before the stream ends, so
-  the `n/m` form goes.
+  one venue add one marker.
+- The summary counts what it has: `gigs.value.length` gigs. The header
+  `X-Gig-Total` holds the count of the range, so the line shows
+  `3 / 40 gigs` while the stream runs and `40 gigs` after it ends.
 - `venueInfo` still holds each venue, so a click on a row costs no request.
 - `venueErrors` holds the reason for a failed venue read, so the click shows the
   reason and makes no request.

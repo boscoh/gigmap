@@ -817,6 +817,8 @@
     // The OpenStreetMap standard tiles: a short credit and no API key. This
     // tile server does not serve retina tiles, so the URL has no {r}.
     const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+    // The event stream sends the count of the range in this header.
+    const TOTAL_HEADER = "X-Gig-Total";
     const TILE_ATTRIBUTION =
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
         "contributors";
@@ -948,7 +950,6 @@
         const selectedGig = ref(null);
         const venue = ref({data: null, error: ""});
         const streaming = ref(false);
-        const markerCount = ref(0);
         let eventRun = 0;
         let eventSource = null;
         const narrowScreen = window.matchMedia("(max-width: 991.98px)");
@@ -1041,7 +1042,7 @@
                 }
                 markers.clear();
             }
-            markerCount.value = 0;
+            total.value = 0;
             activeVenueUrl.value = "";
             venueInfo.clear();
             venueErrors.clear();
@@ -1118,23 +1119,20 @@
 
         const busy = computed(() => loading.value || streaming.value);
 
+        // The response header holds the count of the range, so the line
+        // can show the progress before the first row arrives.
+        const total = ref(0);
         const gigsText = computed(() => {
-            if (loading.value || !gigs.value.length) {
+            if (!gigs.value.length && !total.value) {
                 return "";
             }
-            return `${gigs.value.length} gigs`;
+            // The total shows only while the stream runs, so the last
+            // line is the count that the page holds.
+            const of = total.value && streaming.value ? ` / ${total.value}` : "";
+            return `${gigs.value.length}${of} gigs`;
         });
 
-        const venuesText = computed(() => {
-            if (loading.value || !markerCount.value) {
-                return "";
-            }
-            return `in ${markerCount.value} venues`;
-        });
-
-        const statusText = computed(
-            () => [gigsText.value, venuesText.value].filter(Boolean).join(" "),
-        );
+        const statusText = gigsText;
 
         function actsAt(venueUrl) {
             const acts = [];
@@ -1175,7 +1173,6 @@
             marker.bindPopup(popup);
             marker.on("click", () => focusVenue(data.venue_url));
             markers.set(data.venue_url, marker);
-            markerCount.value = markers.size;
         }
 
         // The narrow layout shows a shadow on an edge when rows are hidden past it.
@@ -1488,6 +1485,9 @@
                     timeout: false,
                     signal: eventSource.signal,
                 });
+                // The header holds the count of the range, so the line
+                // shows the progress before the first row.
+                total.value = Number(response.headers.get(TOTAL_HEADER)) || 0;
                 for await (const line of readNdjsonLines(response)) {
                     if (runId !== eventRun) {
                         break;
@@ -1623,7 +1623,6 @@
             selectGig,
             streaming,
             isNarrow,
-            markerCount,
             sideWidth,
             frameClass,
             syncScroll,
