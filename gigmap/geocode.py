@@ -77,11 +77,22 @@ async def geocode(query: str) -> dict | None:
     return {"latitude": latitude, "longitude": longitude}
 
 
+def address_query(address: str) -> str:
+    """Add the country to an address, unless the address names it already.
+
+    Nominatim finds nothing for `..., Australia, Australia`.
+    """
+    if "australia" in address.lower():
+        return address
+    return f"{address}, Australia"
+
+
+
 async def geocode_venue(name: str | None, address: str | None) -> dict | None:
     """Try the address, then the venue name, and return the first place."""
     queries = []
     if address:
-        queries.append(f"{address}, Australia")
+        queries.append(address_query(address))
     if name:
         queries.append(f"{name}, Melbourne, Australia")
     for query in queries:

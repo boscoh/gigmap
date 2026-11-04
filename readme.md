@@ -10,8 +10,10 @@ The live site is at [gigmap.dev](https://gigmap.dev).
 ## This is a data reformatter
 
 The app reads the data from other websites. The main source is the excellent
-Melbourne music magazine [beat.com.au](https://beat.com.au). The second source
-is the [Melbourne Fringe](https://melbournefringe.com.au).
+Melbourne music magazine [beat.com.au](https://beat.com.au). The other sources
+are the [Melbourne Fringe](https://melbournefringe.com.au),
+[ArtsHub](https://www.artshub.com.au), and the
+[Arts Centre Melbourne](https://www.artscentremelbourne.com.au).
 
 The app merges the dates, the venue location, the times, the coordinates, and
 the Google search terms. Then it sends one list to the frontend.
@@ -46,8 +48,8 @@ The app needs Python 3.10 or later, and `uv`.
 uv run gigmap serve
 ```
 
-Then open `http://127.0.0.1:8000/`. The Fringe site is at
-`http://127.0.0.1:8000/fringe/`.
+Then open `http://127.0.0.1:8000/`. The other sites are at `/artshub/`,
+`/artscentre/`, and `/fringe/`. The map of all sites is at `/all/`.
 
 ```bash
 uv run gigmap --help            # the commands
@@ -68,16 +70,23 @@ files:
 
 ## The sites
 
-One server answers both sites. The path selects the site:
+One server answers every site. The path selects the site:
 
 | Path | The site | A gig is | The reads |
 | ---- | -------- | -------- | --------- |
 | `/` | beat.com.au | one gig card of the guide | `/api/beat/*` |
+| `/artscentre/` | artscentremelbourne.com.au | one day of an event run | `/api/artscentre/*` |
+| `/artshub/` | artshub.com.au | one item of the event feed | `/api/artshub/*` |
 | `/fringe/` | melbournefringe.com.au | one performance of the festival | `/api/fringe/*` |
+| `/all/` | all four sites above | one gig of any site | `/api/all/*` |
 
 A wrong source name answers 404, so one site never answers for another site.
 Each site keeps its own cache files, so one site never answers from the cache
 of the other.
+
+The `/all/` page reads the four sites at the same time and joins the gigs. It
+uses the cache files of the four sites. A site that fails is left out and
+logged. The page does not remove a show that two sites list.
 
 ## The files
 
@@ -85,7 +94,10 @@ of the other.
 | ------------------- | --------------------------------------------------------------------- |
 | `gigmap/server.py`  | the HTTP routes, the dependency, and the cleanup task                 |
 | `gigmap/sources.py` | the protocol and the data classes, so a second site is possible       |
+| `gigmap/artscentre.py` | every rule about `artscentremelbourne.com.au`                       |
+| `gigmap/artshub.py` | every rule about `artshub.com.au`                                     |
 | `gigmap/beat.py`    | every rule about `beat.com.au`, and the only reader of that site      |
+| `gigmap/combined.py` | the merge of the four sites into the `/all/` page                   |
 | `gigmap/fringe.py`  | every rule about the Fringe API, and the only reader of that site     |
 | `gigmap/geocode.py` | the only reader of Nominatim, and the venue coordinates               |
 | `gigmap/logger.py`  | the plain log form, the key/value blocks, and the request lines   |

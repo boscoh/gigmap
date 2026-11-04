@@ -535,6 +535,16 @@
 <script>
     // The server writes the source details into <head>.
     const SOURCE = window.SOURCE;
+    // The Pug lines of the data links in the header: one link for a source, or
+    // one for each source that a merged page reads, with a dot, and no space, between them.
+    // `indent` is the column of the first line, so the other lines line up.
+    function sourceLinks(indent) {
+        const parts = SOURCE.parts.length ? SOURCE.parts : [SOURCE];
+        const pad = " ".repeat(indent);
+        return parts
+            .map((part) => `a(href="${part.home_url}", target="_blank", rel="noopener", title="Open ${part.name}") ${part.name}`)
+            .join(`\n${pad}| ·\n${pad}`);
+    }
     /* language=pug */
     let template = renderHtmlFromPug(/* pug */`
       .container-fluid.py-3.app-shell.d-flex.flex-column.flex-lg-row.gap-lg-2
@@ -544,13 +554,8 @@
               | ${SOURCE.title}
           .gig-head.text-muted(v-if="!isNarrow")
             ="data "
-            a.ms-1.me-2(
-                href="${SOURCE.home_url}",
-                target="_blank",
-                rel="noopener",
-                title="Search beat.com.au"
-            ) ${SOURCE.name}
-            ="source "
+            ${sourceLinks(12)}
+            =", source "
             a(
                 href="https://github.com/boscoh/gigmap",
                 target="_blank",
@@ -564,13 +569,8 @@
                   | ${SOURCE.title}
                 .text-muted
                   = "data "
-                  a(
-                      href="${SOURCE.home_url}",
-                      target="_blank",
-                      rel="noopener",
-                      title="Search beat.com.au"
-                  ) ${SOURCE.name}
-                  =" source "
+                  ${sourceLinks(18)}
+                  =", source "
                   a(
                       href="https://github.com/boscoh/gigmap",
                       target="_blank",
@@ -1051,10 +1051,13 @@
             loadEvents();
         }
 
+        // The time value of a gig that has no time that the page can read.
+        const NO_TIME = Number.MAX_SAFE_INTEGER;
+
         function timeValue(time) {
             const match = /^(\d{1,2})(?::(\d{2}))?(am|pm)$/.exec(String(time || "").trim().toLowerCase());
             if (!match) {
-                return Number.MAX_SAFE_INTEGER;
+                return NO_TIME;
             }
             let hour = Number(match[1]) % 12;
             if (match[3] === "pm") {
@@ -1083,23 +1086,26 @@
             return value == null ? Number.MAX_SAFE_INTEGER : value;
         }
 
+        // A gig that runs over many days counts on the first day of the range
+        // that the page shows, so only its time sorts it on that day.
+        function sortDay(gig) {
+            return gig.date && gig.date > startDate.value ? gig.date : startDate.value;
+        }
+
         function compareGigs(left, right) {
             const direction = sortDir.value === "asc" ? 1 : -1;
             if (sortKey.value === "time") {
-                const dateOrder = String(left.date || "").localeCompare(String(right.date || ""));
+                const dateOrder = sortDay(left).localeCompare(sortDay(right));
                 if (dateOrder !== 0) {
                     return dateOrder * direction;
                 }
-                if (!left.time && !right.time) {
-                    return 0;
+                const leftTime = timeValue(left.time);
+                const rightTime = timeValue(right.time);
+                // A gig with no valid time sorts first, whichever way the sort runs.
+                if (leftTime === NO_TIME || rightTime === NO_TIME) {
+                    return leftTime === rightTime ? 0 : leftTime === NO_TIME ? -1 : 1;
                 }
-                if (!left.time) {
-                    return 1;
-                }
-                if (!right.time) {
-                    return -1;
-                }
-                return (timeValue(left.time) - timeValue(right.time)) * direction;
+                return (leftTime - rightTime) * direction;
             }
             if (sortKey.value === "price") {
                 return (priceValue(left.ticket) - priceValue(right.ticket)) * direction;

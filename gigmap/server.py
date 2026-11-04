@@ -5,7 +5,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -26,7 +26,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import beat, fringe, sources, stores
+from gigmap import artscentre, artshub, beat, combined, fringe, sources, stores
 from gigmap.logger import log_incoming, log_kv, setup_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -43,13 +43,30 @@ SOURCE_API_BASE_TOKEN = "__API_BASE__"
 # the Fringe page. The reads of every source sit at `/api/<source>`.
 ROOT_SOURCE_NAME = "beat"
 SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
+    "artscentre": artscentre.ArtsCentreSource,
+    "artshub": artshub.ArtshubSource,
     "beat": beat.BeatSource,
     "fringe": fringe.FringeSource,
 }
+# The `all` page merges every source in SOURCE_FACTORIES into one map.
+ALL_SOURCE_NAME = "all"
 SOURCE_INFO: dict[str, sources.SourceInfo] = {
+    "all": sources.SourceInfo(
+        title="Melb All Gig Map",
+        name="all sources",
+        home_url="/",
+    ),
+    "artscentre": artscentre.SOURCE,
+    "artshub": artshub.SOURCE,
     "beat": beat.SOURCE,
     "fringe": fringe.SOURCE,
 }
+# The header of the `all` page links these sources by their short names.
+# The page still reads fringe too, but fringe adds few gigs, so it is not listed.
+SOURCE_INFO[ALL_SOURCE_NAME].parts = [
+    SOURCE_INFO[name].model_copy(update={"name": name})
+    for name in ("artscentre", "artshub", "beat")
+]
 
 # The document title of the server itself.
 SOURCE = SOURCE_INFO[ROOT_SOURCE_NAME]
@@ -151,7 +168,7 @@ def page_source_name(path: str) -> str:
     beat source, which is the site at the root.
     """
     name = first_segment(path)
-    return name if name in SOURCE_FACTORIES else ROOT_SOURCE_NAME
+    return name if name in SOURCE_INFO else ROOT_SOURCE_NAME
 
 
 def api_source_name(path: str) -> str:
@@ -164,7 +181,7 @@ def api_source_name(path: str) -> str:
     parts = path.strip("/").split("/")
     if len(parts) >= 2 and parts[0].lower() == "api":
         name = parts[1].lower()
-        if name in SOURCE_FACTORIES:
+        if name in SOURCE_INFO:
             return name
     raise HTTPException(status_code=404, detail="unknown source")
 
@@ -175,10 +192,24 @@ def api_prefix(name: str) -> str:
 
 
 async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource]:
-    """Give one cached source for the request, then close it."""
+    """Give one cached source for the request, then close it.
+
+    The `all` source opens every source. Each one keeps its own cache,
+    so the `all` page shares the files of the other pages.
+    """
     name = api_source_name(request.url.path)
-    async with SOURCE_FACTORIES[name]() as site:
-        yield stores.CachedSource(site, stores.DataStores(data_dir, name))
+    names = list(SOURCE_FACTORIES) if name == ALL_SOURCE_NAME else [name]
+    async with AsyncExitStack() as stack:
+        members: dict[str, sources.GigSource] = {}
+        for member in names:
+            site = await stack.enter_async_context(SOURCE_FACTORIES[member]())
+            members[member] = stores.CachedSource(
+                site, stores.DataStores(data_dir, member)
+            )
+        if name == ALL_SOURCE_NAME:
+            yield combined.CombinedSource(members)
+        else:
+            yield members[name]
 
 
 SourceDep = Annotated[sources.GigSource, Depends(source_dependency)]
@@ -369,7 +400,7 @@ def mount_sources(
     are at `/api/fringe/events`.
     """
     application.include_router(pages)
-    for name in SOURCE_FACTORIES:
+    for name in SOURCE_INFO:
         application.include_router(reads, prefix=api_prefix(name))
         # The root site is the beat site, so it needs no page prefix.
         if name == ROOT_SOURCE_NAME:

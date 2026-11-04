@@ -19,12 +19,14 @@ class SourceInfo(BaseModel):
     """The app details of one source.
 
     The app serves one source, so the source carries the page title and
-    the attribution that the app shows.
+    the attribution that the app shows. A page that merges many sources lists
+    them in `parts`, and the page links each one.
     """
 
     title: str
     name: str
     home_url: str
+    parts: list["SourceInfo"] = Field(default_factory=list)
 
 
 class SourceError(Exception):
