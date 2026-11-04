@@ -170,9 +170,9 @@ def test_a_beat_free_category_holds_a_free_ticket() -> None:
     assert gigs[0].ticket.url is None
 
 
-def test_the_root_page_answers_the_beat_source() -> None:
-    assert server.page_source_name("/") == "beat"
-    assert server.page_source_name("/nowhere/") == "beat"
+def test_the_root_page_answers_the_all_source() -> None:
+    assert server.page_source_name("/") == "all"
+    assert server.page_source_name("/nowhere/") == "all"
 
 
 def test_a_page_prefix_answers_that_source() -> None:
@@ -202,11 +202,22 @@ def test_each_site_serves_its_own_page(
     http, _ = client
 
     root = http.get("/")
+    all_page = http.get("/all/")
+    beat_page = http.get("/beat/")
     fringe = http.get("/fringe/")
 
     assert root.status_code == 200
-    assert '<title>Melb Gig Map</title>' in root.text
-    assert 'window.API_BASE = "/api/beat";' in root.text
+    # The root is the landing page. It holds a link for each page below
+    # and no source, so it carries no API base.
+    assert 'href="all/"' in root.text
+    assert 'href="whatson/"' in root.text
+    assert 'window.API_BASE' not in root.text
+    assert all_page.status_code == 200
+    assert '<title>Melb All Gig Map</title>' in all_page.text
+    assert 'window.API_BASE = "/api/all";' in all_page.text
+    assert beat_page.status_code == 200
+    assert '<title>Melb Gig Map</title>' in beat_page.text
+    assert 'window.API_BASE = "/api/beat";' in beat_page.text
     assert fringe.status_code == 200
     assert '<title>Melb Fringe Gig Map</title>' in fringe.text
     assert 'window.API_BASE = "/api/fringe";' in fringe.text
@@ -240,13 +251,17 @@ def test_a_read_answers_on_the_fringe_path(
     assert fake.calls[0] == ("gigs", "2026-10-01", "2026-10-02")
 
 
-def test_the_beat_path_is_not_served_twice(
+def test_each_source_page_answers_its_own_source(
     client: tuple[TestClient, FakeSource],
 ) -> None:
-    """The root site is the beat site, so /beat is not a second copy."""
+    """`/all/` answers the all map, so the root page answers no source."""
     http, _ = client
 
-    assert http.get("/beat/").status_code == 404
+    all_page = http.get("/all/")
+    beat_page = http.get("/beat/")
+
+    assert 'window.API_BASE = "/api/all";' in all_page.text
+    assert 'window.API_BASE = "/api/beat";' in beat_page.text
 
 
 def test_the_event_line_holds_every_gig_field(

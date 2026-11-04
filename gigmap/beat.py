@@ -23,7 +23,7 @@ BEAT_URL = "https://beat.com.au/gig-guide/"
 # The app serves this one site, so the source carries the app details.
 SOURCE = sources.SourceInfo(
     title="Melb Gig Map",
-    name="beat.com.au",
+    name="beats",
     home_url=BEAT_URL,
 )
 

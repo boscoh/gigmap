@@ -88,6 +88,7 @@ def test_the_all_page_and_reads_are_served() -> None:
 
 def test_the_all_page_lists_the_short_names() -> None:
     parts = server.SOURCE_INFO["all"].parts
-    assert [part.name for part in parts] == ["artscentre", "artshub", "beat"]
-    assert parts[2].home_url == server.SOURCE_INFO["beat"].home_url
+    assert [part.name for part in parts] == ["artscentre", "beats", "whatson"]
+    assert parts[1].home_url == server.SOURCE_INFO["beat"].home_url
+    assert parts[2].home_url == server.SOURCE_INFO["whatson"].home_url
     assert server.SOURCE_INFO["beat"].parts == []

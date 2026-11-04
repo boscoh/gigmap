@@ -13,7 +13,8 @@ The app reads the data from other websites. The main source is the excellent
 Melbourne music magazine [beat.com.au](https://beat.com.au). The other sources
 are the [Melbourne Fringe](https://melbournefringe.com.au),
 [ArtsHub](https://www.artshub.com.au), and the
-[Arts Centre Melbourne](https://www.artscentremelbourne.com.au).
+[Arts Centre Melbourne](https://www.artscentremelbourne.com.au), and the
+[City of Melbourne What's On](https://whatson.melbourne.vic.gov.au).
 
 The app merges the dates, the venue location, the times, the coordinates, and
 the Google search terms. Then it sends one list to the frontend.
@@ -48,8 +49,9 @@ The app needs Python 3.10 or later, and `uv`.
 uv run gigmap serve
 ```
 
-Then open `http://127.0.0.1:8000/`. The other sites are at `/artshub/`,
-`/artscentre/`, and `/fringe/`. The map of all sites is at `/all/`.
+Then open `http://127.0.0.1:8000/` for the landing page. The link of each
+site goes to a path of its own: `/all/`, `/beat/`, `/artscentre/`,
+`/artshub/`, `/fringe/`, and `/whatson/`.
 
 ```bash
 uv run gigmap --help            # the commands
@@ -63,8 +65,8 @@ uv sync                         # build the environment again
 The watcher looks at `.py` files only. That rule is correct for the other
 files:
 
-- `index.html`: the server reads this file on each request. Refresh the
-  browser. You do not need a restart.
+- `index.html` and `gigmap/index.html`: the server reads these files on
+  each request. Refresh the browser. You do not need a restart.
 - `data/`: the server writes these files during a request. A watch on that
   directory would cause a loop.
 
@@ -74,19 +76,25 @@ One server answers every site. The path selects the site:
 
 | Path | The site | A gig is | The reads |
 | ---- | -------- | -------- | --------- |
-| `/` | beat.com.au | one gig card of the guide | `/api/beat/*` |
+| `/` | the landing page, with a link to each site below | none | none |
 | `/artscentre/` | artscentremelbourne.com.au | one day of an event run | `/api/artscentre/*` |
 | `/artshub/` | artshub.com.au | one item of the event feed | `/api/artshub/*` |
+| `/beat/` | beat.com.au | one gig card of the guide | `/api/beat/*` |
 | `/fringe/` | melbournefringe.com.au | one performance of the festival | `/api/fringe/*` |
-| `/all/` | all four sites above | one gig of any site | `/api/all/*` |
+| `/whatson/` | whatson.melbourne.vic.gov.au | one session of an event | `/api/whatson/*` |
+| `/all/` | artscentre, beat, and whatson | one gig of any site | `/api/all/*` |
 
 A wrong source name answers 404, so one site never answers for another site.
 Each site keeps its own cache files, so one site never answers from the cache
 of the other.
 
-The `/all/` page reads the four sites at the same time and joins the gigs. It
-uses the cache files of the four sites. A site that fails is left out and
+The `/all/` page reads its sites at the same time and joins the gigs. It
+uses the cache files of those sites. A site that fails is left out and
 logged. The page does not remove a show that two sites list.
+
+The `/all/` page reads the sites that give a time of day for each gig:
+artscentre, beat, and whatson. It does not read artshub or fringe, whose
+pages are still at `/artshub/` and `/fringe/`.
 
 ## The files
 
@@ -97,11 +105,13 @@ logged. The page does not remove a show that two sites list.
 | `gigmap/artscentre.py` | every rule about `artscentremelbourne.com.au`                       |
 | `gigmap/artshub.py` | every rule about `artshub.com.au`                                     |
 | `gigmap/beat.py`    | every rule about `beat.com.au`, and the only reader of that site      |
-| `gigmap/combined.py` | the merge of the four sites into the `/all/` page                   |
+| `gigmap/combined.py` | the merge of the sites of ALL_MEMBERS into `/all/`          |
 | `gigmap/fringe.py`  | every rule about the Fringe API, and the only reader of that site     |
+| `gigmap/whatson.py` | every rule about `whatson.melbourne.vic.gov.au`                       |
 | `gigmap/geocode.py` | the only reader of Nominatim, and the venue coordinates               |
 | `gigmap/logger.py`  | the plain log form, the key/value blocks, and the request lines   |
 | `gigmap/stores.py`  | the JSON cache, the three stores, the cleanup, and the cached source  |
 | `gigmap/index.html` | the whole client, in one file                                         |
+| `index.html`        | the landing page at `/`                                               |
 | `data/`             | the saved JSON                                                        |
 | `tests/`            | the pytest tests                                                      |

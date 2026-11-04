@@ -26,7 +26,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import artscentre, artshub, beat, combined, fringe, sources, stores
+from gigmap import artscentre, artshub, beat, combined, fringe, sources, stores, whatson
 from gigmap.logger import log_incoming, log_kv, setup_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -38,34 +38,44 @@ SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
 SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
 SOURCE_API_BASE_TOKEN = "__API_BASE__"
 
-# One server answers both sites. `/` is the page of the beat site, and
-# each other source has a page prefix of its own name, so `/fringe` is
-# the Fringe page. The reads of every source sit at `/api/<source>`.
-ROOT_SOURCE_NAME = "beat"
+# One server answers every site. Each source has a page prefix of its own
+# name, so `/fringe` is the Fringe page and `/beat` is the beat page. The
+# reads of every source sit at `/api/<source>`. The root path `/` answers
+# the landing page, and `/all/` answers the map of all sources.
 SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "artscentre": artscentre.ArtsCentreSource,
     "artshub": artshub.ArtshubSource,
     "beat": beat.BeatSource,
     "fringe": fringe.FringeSource,
+    "whatson": whatson.WhatsonSource,
 }
-# The `all` page merges every source in SOURCE_FACTORIES into one map.
+# The `all` page merges these sources into one map: the three that give
+# a time of day for each gig. artshub and fringe are not members. The
+# page of each of those sources is still at `/artshub/` and `/fringe/`.
+ALL_MEMBERS = ("artscentre", "beat", "whatson")
 ALL_SOURCE_NAME = "all"
+# The root path `/` answers the landing page, and `/all/` answers the
+# map of all sources.
+ROOT_SOURCE_NAME = ALL_SOURCE_NAME
+LANDING_FILE = ROOT_DIR / "index.html"
 SOURCE_INFO: dict[str, sources.SourceInfo] = {
     "all": sources.SourceInfo(
         title="Melb All Gig Map",
         name="all sources",
-        home_url="/",
+        home_url="/all/",
     ),
     "artscentre": artscentre.SOURCE,
     "artshub": artshub.SOURCE,
     "beat": beat.SOURCE,
     "fringe": fringe.SOURCE,
+    "whatson": whatson.SOURCE,
 }
-# The header of the `all` page links these sources by their short names.
-# The page still reads fringe too, but fringe adds few gigs, so it is not listed.
+# The header of the `all` page links each member by its short name.
 SOURCE_INFO[ALL_SOURCE_NAME].parts = [
-    SOURCE_INFO[name].model_copy(update={"name": name})
-    for name in ("artscentre", "artshub", "beat")
+    SOURCE_INFO[name].model_copy(
+        update={"name": "beats" if name == "beat" else name}
+    )
+    for name in ALL_MEMBERS
 ]
 
 # The document title of the server itself.
@@ -164,8 +174,9 @@ def page_source_name(path: str) -> str:
     """Return the name of the source of one page path.
 
     The app serves each page at the path of its source, so `/fringe/`
-    answers from the Fringe source. The root path `/` answers from the
-    beat source, which is the site at the root.
+    answers from the Fringe source. `/all/` answers from the `all`
+    source, which is the map of every source. The root path `/` is the
+    landing page, and it is not a source page.
     """
     name = first_segment(path)
     return name if name in SOURCE_INFO else ROOT_SOURCE_NAME
@@ -194,11 +205,11 @@ def api_prefix(name: str) -> str:
 async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource]:
     """Give one cached source for the request, then close it.
 
-    The `all` source opens every source. Each one keeps its own cache,
-    so the `all` page shares the files of the other pages.
+    The `all` source opens every member of ALL_MEMBERS. Each one keeps its
+    own cache, so the `all` page shares the files of the other pages.
     """
     name = api_source_name(request.url.path)
-    names = list(SOURCE_FACTORIES) if name == ALL_SOURCE_NAME else [name]
+    names = list(ALL_MEMBERS) if name == ALL_SOURCE_NAME else [name]
     async with AsyncExitStack() as stack:
         members: dict[str, sources.GigSource] = {}
         for member in names:
@@ -243,8 +254,10 @@ def validate_dates(start_date: str, end_date: str) -> None:
 
 @page_router.get("/")
 async def index(request: Request) -> HTMLResponse:
-    """Serve the page of one source, with its details filled in."""
+    """Serve the landing page, or the page of one source."""
     path = request.url.path
+    if not path.strip("/"):
+        return HTMLResponse(LANDING_FILE.read_text(encoding="utf-8"))
     name = page_source_name(path)
     info = SOURCE_INFO[name]
     html = (PACKAGE_DIR / "index.html").read_text(encoding="utf-8")
@@ -395,16 +408,14 @@ def mount_sources(
 ) -> None:
     """Serve the page and the reads of each source.
 
-    `/` answers the beat page and `/fringe/` answers the Fringe page.
-    The reads of a source sit at `/api/<source>/`, so the Fringe reads
-    are at `/api/fringe/events`.
+    `/` answers the landing page, `/all/` answers the map of all
+    sources, and `/beat/` answers the beat page. The reads of a source
+    sit at `/api/<source>/`, so the Fringe reads are at
+    `/api/fringe/events`.
     """
     application.include_router(pages)
     for name in SOURCE_INFO:
         application.include_router(reads, prefix=api_prefix(name))
-        # The root site is the beat site, so it needs no page prefix.
-        if name == ROOT_SOURCE_NAME:
-            continue
         application.include_router(pages, prefix=f"/{name}")
 
 mount_sources(app, page_router, api_router)

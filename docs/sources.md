@@ -210,3 +210,85 @@ Two gaps are deliberate:
 - Four gigs at `The Leaper Family Pavilion` carry no pin. The name is not in
   OpenStreetMap, and the page of the site is behind Imperva. A missing pin is
   better than a guessed pin.
+
+# What's On (City of Melbourne)
+
+Target: `https://whatson.melbourne.vic.gov.au/search`
+
+## What I explored
+
+The site is a Rails/Turbo app behind CloudFront. It answers a plain HTTP
+request with no challenge, and `robots.txt` allows `/search`. Both the search
+results and the event pages are server-rendered HTML, so no JavaScript is
+needed.
+
+The search page is the list. The primary category is `c=things_to_do`, and
+the three subcategories are `scs[]=theatre` for the checkbox "Theatre and
+shows", `scs[]=music` for "Music, concerts, and gigs", and `scs[]=comedy`
+for "Comedy". A date query uses
+`dkw=specific_dates` and `date_range` as `YYYY-MM-DD to YYYY-MM-DD`, with a
+literal ` to ` separator and both ends included. `q=` is required and empty.
+
+A page holds 20 cards, and a page above the last page answers 200 with zero
+cards. Measured counts with theatre and music: one day is 13 events, three days
+is 37, sixty days is 168.
+
+## What the search page holds
+
+The date filter is coarse. It matches the run of an event, not the sessions:
+a 6-8 Nov query returns events whose run window overlaps, even when no session
+falls in those days. For example, The Vaudeville Revue runs 2026-08-07 to
+2027-01-02 and still appears. So the search page yields candidates only, and
+the module does not trust its date.
+
+A card holds the title and the url in `a.main-link[data-gtm-variable-label]`
+with `href="/things-to-do/<slug>"`, the image in `img.page_image`, the
+summary in `p.summary`, and the tags in `ul.tag-list a.link--tag`. The card
+also holds a `<time>` of the next session relative to today, and that date is
+often outside the queried range, so the module never uses it.
+
+## What an event page holds
+
+`/things-to-do/<slug>` holds a JSON-LD block with `"@type": "Event"` and the
+fields `name`, `description`, `image` (different on some events), `startDate`,
+`endDate`, `eventStatus`, and a `location` with a name and a street address.
+All 20 sampled pages had the block and a location.
+
+`table#date-times-table` holds the sessions, one row for each session day. A
+row can hold two `li` entries (for example 1pm and 7.30pm), and the module
+keeps the first. Each `li` holds a `span[aria-hidden=true]` and a
+`span.sr-only`; the `sr-only` text is the clean time, so the module reads it
+and strips the end time.
+
+The session day text has no year (for example `Sat 2 Jan` for a run that ends
+2027-01-02), so the module takes the year from the JSON-LD run window: it
+tries the year of `startDate` and the year after, and keeps the day that
+falls inside `[startDate, endDate]`. The site publishes only some sessions of
+a long run (Guru Dudu lists 5 of about 13), and that is the site data, not a
+parse loss.
+
+`div.price-and-bookings` holds the price and the booking. A price table holds
+rows such as `Adult / general $79`; a free event holds
+`<p>This is a free event</p>`. A booking link has the text `Book online`.
+`div.location` holds the venue as text and a Google Maps query link, but no
+coordinates.
+
+## The rules
+
+| Rule | Why |
+| --- | --- |
+| Draw one gig per session day | The search filter is coarse, so the real sessions come from the event page |
+| Take the year from the JSON-LD run window | The session day text has no year |
+| Send each subcategory as its own `scs[]` key of a list of pairs | A dict holds one `scs[]` key only, and the site would answer one category |
+| Read the `sr-only` span and drop the end time | The `aria-hidden` span holds a display form, and one day can hold two shows |
+| Build a synthetic venue url of `/venue/<name>/<address>/` | The site has no venue page, and the server geocodes the address |
+| Retry a 403 once after a short sleep | The site rate-limits after about 45 reads in two minutes, then recovers |
+
+## The result
+
+`gigmap/whatson.py` is 627 lines, with the tests in `tests/test_whatson.py`.
+The module raises one gig for each session day, with the venue address from
+the JSON-LD `location`, and the ticket from the price-and-bookings box.
+
+One gap: `image_alt` comes from the card, because the JSON-LD block holds no
+alt text.
