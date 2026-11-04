@@ -127,6 +127,24 @@ One serialization stays, and it comes from the origin, not from this design:
 Nominatim policy allows no more. Every venue with a cache entry skips that
 lock, so a warm day has no serialization at all.
 
+## The merge of sources
+
+`/api/<source>/events` always merges a set of members. A page of one source has
+one member. `/api/all/events` has the members of `ALL_MEMBERS`.
+
+- `event_stream` starts one `gigs` read for each member, and waits for the
+  first list only. When every list fails, the route answers 502 with the
+  first `SourceError`. A later failure is a log line.
+- `merged_lines` runs one task for each member. A task reads its own list,
+  puts the line `{"total": n}` into a queue, then puts the gig lines of
+  `event_lines` into the same queue. Each member has its own pools.
+- The route sends each queue item as it arrives. A slow member holds no line
+  of a fast member. A member that fails is logged and left out.
+- A client disconnect cancels every member task.
+- The page sees two line shapes: `{"total": n}` and the gig line. The header
+  `X-Gig-Total` is gone, because no total is known before the first list.
+- There is no dedupe. Two sites that list one show give two gigs.
+
 ## The client
 
 `loadTimes` and `mapAllVenues` become one function, `loadEvents`. The client
@@ -144,8 +162,8 @@ serves one load.
   at 5 moves a second.
 - `addMarker` holds one map from `venue_url` to the marker, so five lines of
   one venue add one marker.
-- The summary counts what it has: `gigs.value.length` gigs. The header
-  `X-Gig-Total` holds the count of the range, so the line shows
+- The summary counts what it has: `gigs.value.length` gigs. Each source sends
+  a first line `{"total": n}`. The page adds the totals, so the line shows
   `3 / 40 gigs` while the stream runs and `40 gigs` after it ends.
 - `venueInfo` still holds each venue, so a click on a row costs no request.
 - `venueErrors` holds the reason for a failed venue read, so the click shows the

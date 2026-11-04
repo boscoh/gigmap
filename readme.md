@@ -105,7 +105,6 @@ pages are still at `/artshub/` and `/fringe/`.
 | `gigmap/artscentre.py` | every rule about `artscentremelbourne.com.au`                       |
 | `gigmap/artshub.py` | every rule about `artshub.com.au`                                     |
 | `gigmap/beat.py`    | every rule about `beat.com.au`, and the only reader of that site      |
-| `gigmap/combined.py` | the merge of the sites of ALL_MEMBERS into `/all/`          |
 | `gigmap/fringe.py`  | every rule about the Fringe API, and the only reader of that site     |
 | `gigmap/whatson.py` | every rule about `whatson.melbourne.vic.gov.au`                       |
 | `gigmap/geocode.py` | the only reader of Nominatim, and the venue coordinates               |

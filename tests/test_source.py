@@ -84,7 +84,7 @@ def client(
     source: sources.GigSource = stores.CachedSource(
         fake, stores.DataStores(server.data_dir)
     )
-    server.app.dependency_overrides[server.source_dependency] = lambda: source
+    server.app.dependency_overrides[server.source_dependency] = lambda: {"beat": source}
     try:
         yield TestClient(server.app), fake
     finally:
@@ -291,10 +291,9 @@ def test_the_event_line_holds_every_gig_field(
 
 
 def _lines(response: Any) -> list[dict[str, Any]]:
-    """Return the lines of an NDJSON answer as objects."""
-    return [
-        json.loads(line) for line in response.text.splitlines() if line.strip()
-    ]
+    """Return the gig lines of an NDJSON answer, without the total lines."""
+    lines = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    return [line for line in lines if "total" not in line]
 
 
 def test_the_removed_reads_answer_404(
@@ -332,17 +331,19 @@ def test_the_event_stream_answers_one_line_for_each_gig(
     }
 
 
-def test_the_event_stream_sends_the_count_in_a_header(
+def test_the_event_stream_sends_the_count_in_a_total_line(
     client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The header holds the count, so the page shows it before line one."""
+    """A member sends its count first, so the page shows it before row one."""
     http, fake = client
     monkeypatch.setattr(geocode, "geocode_venue", _no_place)
     fake.gig_venue_urls = [VENUE_URL, SECOND_VENUE_URL]
 
     response = http.get("/api/beat/events", params=PARAMS)
 
-    assert response.headers[server.TOTAL_HEADER] == "2"
+    first = response.text.splitlines()[0]
+    assert json.loads(first) == {"total": 2}
+    assert "x-gig-total" not in response.headers
 
 
 def test_the_event_stream_reads_a_shared_venue_one_time(
@@ -474,12 +475,17 @@ def test_a_blocked_venue_holds_no_other_line(
         gate = asyncio.Event()
         fake.slow_venue_url = VENUE_URL
         fake.venue_gate = gate
-        response = await server.event_stream(source, "2026-10-01", "2026-10-02")
+        response = await server.event_stream(
+            {"beat": source}, "2026-10-01", "2026-10-02"
+        )
         lines = cast(Any, response.body_iterator)
         pending = asyncio.ensure_future(lines.__anext__())
         try:
+            total = json.loads(await asyncio.wait_for(pending, timeout=5))
+            assert total == {"total": 2}
             # The gate of the slow venue stays shut, so only the gig of
             # the fast venue can answer.
+            pending = asyncio.ensure_future(lines.__anext__())
             fast = json.loads(await asyncio.wait_for(pending, timeout=5))
             gate.set()
             rest = [json.loads(line) async for line in lines]

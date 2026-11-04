@@ -26,7 +26,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import artscentre, artshub, beat, combined, fringe, sources, stores, whatson
+from gigmap import artscentre, artshub, beat, fringe, sources, stores, whatson
 from gigmap.logger import log_incoming, log_kv, setup_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -97,9 +97,6 @@ VENUE_FAILURE_TEXT = "the venue lookup failed"
 # nginx holds a small stream in its buffers until the source closes it.
 # This header makes nginx pass each line to the page at once.
 STREAM_HEADERS = {"X-Accel-Buffering": "no"}
-# The header holds the count of the range, so the page shows the
-# progress before the first line of the stream.
-TOTAL_HEADER = "X-Gig-Total"
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -202,10 +199,10 @@ def api_prefix(name: str) -> str:
     return f"/api/{name}"
 
 
-async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource]:
-    """Give one cached source for the request, then close it.
+async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources.GigSource]]:
+    """Give the cached members for the request, then close them.
 
-    The `all` source opens every member of ALL_MEMBERS. Each one keeps its
+    The `all` page opens every member of ALL_MEMBERS. Each one keeps its
     own cache, so the `all` page shares the files of the other pages.
     """
     name = api_source_name(request.url.path)
@@ -217,13 +214,10 @@ async def source_dependency(request: Request) -> AsyncIterator[sources.GigSource
             members[member] = stores.CachedSource(
                 site, stores.DataStores(data_dir, member)
             )
-        if name == ALL_SOURCE_NAME:
-            yield combined.CombinedSource(members)
-        else:
-            yield members[name]
+        yield members
 
 
-SourceDep = Annotated[sources.GigSource, Depends(source_dependency)]
+MembersDep = Annotated[dict[str, sources.GigSource], Depends(source_dependency)]
 
 
 @app.exception_handler(sources.SourceError)
@@ -387,19 +381,79 @@ async def event_lines(
         await asyncio.gather(*tasks, *reads, return_exceptions=True)
 
 
+async def wait_for_a_list(lists: dict[str, asyncio.Task[list[sources.Gig]]]) -> None:
+    """Return when one member has its gig list. Raise when every member fails.
+
+    The route needs one list before it sends the headers, so a total
+    failure still answers 502. A later failure is a log line only.
+    """
+    pending = set(lists.values())
+    while pending:
+        done, pending = await asyncio.wait(
+            pending, return_when=asyncio.FIRST_COMPLETED
+        )
+        if any(task.exception() is None for task in done):
+            return
+    for name, task in lists.items():
+        log_kv(LOGGER.warning, "source failed", source=name, error=task.exception())
+    error = next(iter(lists.values())).exception()
+    if isinstance(error, sources.SourceError):
+        raise error
+    raise sources.SourceError("no source gave a gig list")
+
+
+async def merged_lines(
+    members: dict[str, sources.GigSource],
+    lists: dict[str, asyncio.Task[list[sources.Gig]]],
+) -> AsyncIterator[str]:
+    """Yield the lines of every member, as each line arrives.
+
+    Each member has its own list read and its own pools, so a slow member
+    holds no line of a fast member. A member that fails is logged and left
+    out. The first line of a member is its total, `{"total": n}`.
+    """
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    async def pump(name: str, member: sources.GigSource) -> None:
+        try:
+            gigs = await lists[name]
+            await queue.put(json.dumps({"total": len(gigs)}) + "\n")
+            async for line in event_lines(member, gigs):
+                await queue.put(line)
+        except Exception as error:
+            log_kv(LOGGER.warning, "source failed", source=name, error=error)
+        finally:
+            await queue.put(None)
+
+    tasks = [asyncio.create_task(pump(name, member)) for name, member in members.items()]
+    try:
+        for _ in tasks:
+            while (line := await queue.get()) is not None:
+                yield line
+    finally:
+        # A client disconnect cancels every member.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, *lists.values(), return_exceptions=True)
+
+
 @api_router.get("/events")
 async def event_stream(
-    source: SourceDep,
+    members: MembersDep,
     start_date: str = Query(...),
     end_date: str = Query(...),
 ) -> StreamingResponse:
     """Stream one line for each gig, when its time and venue are known."""
     validate_dates(start_date, end_date)
-    gigs = await source.gigs(start_date, end_date)
+    lists = {
+        name: asyncio.create_task(member.gigs(start_date, end_date))
+        for name, member in members.items()
+    }
+    await wait_for_a_list(lists)
     return StreamingResponse(
-        event_lines(source, gigs),
+        merged_lines(members, lists),
         media_type="application/x-ndjson",
-        headers={**STREAM_HEADERS, TOTAL_HEADER: str(len(gigs))},
+        headers=STREAM_HEADERS,
     )
 
 
