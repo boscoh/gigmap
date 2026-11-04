@@ -4,7 +4,9 @@ The tests check the feed parse and the venue address. They do not touch the
 live site.
 """
 
+import asyncio
 import xml.etree.ElementTree as ET
+from datetime import date
 
 import pytest
 
@@ -148,3 +150,36 @@ def test_no_venue_holds_no_address() -> None:
 def test_a_foreign_address_is_not_a_venue() -> None:
     assert artshub.decode_venue("https://example.com/venue/A/B/") is None
     assert artshub.decode_venue("https://www.artshub.com.au/event/x/") is None
+
+
+PAGE = """
+<html><body><span>Event Starts</span> Oct 23, 2026 00:00
+<div class="the-content"><p>Open Tuesday to Sunday 10am - 5pm.</p></div>
+</body></html>
+"""
+
+
+def test_the_event_page_gives_the_body_and_the_start() -> None:
+    body, start = artshub.parse_event_page(PAGE)
+    assert body == "Open Tuesday to Sunday 10am - 5pm."
+    assert start == date(2026, 10, 23)
+
+
+def test_a_page_with_no_body_gives_nothing() -> None:
+    assert artshub.parse_event_page("<html></html>") == ("", None)
+
+
+def test_the_detail_holds_the_schedule_of_the_page() -> None:
+    async def run() -> sources.GigDetail | None:
+        source = artshub.ArtshubSource()  # no session: a network call raises
+
+        async def fake(url: str, *_a: object, **_k: object) -> str:
+            return PAGE
+
+        source._text = fake  # type: ignore[method-assign]
+        return await source.gig_detail("https://www.artshub.com.au/event/x-1/")
+
+    detail = asyncio.run(run())
+    assert detail is not None
+    assert detail.days == [1, 2, 3, 4, 5, 6]
+    assert detail.time is None

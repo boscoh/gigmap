@@ -42,6 +42,12 @@ The event page holds no price field and no booking link, so a gig of this
 source holds no ticket. A few descriptions hold a price in the text, and the
 module does not read the text of a description.
 
+The schedule
+
+The event page holds a long text in `div.the-content` and an `Event Starts`
+date. `gig_detail` makes one request for the page and passes the text to
+`extract_schedule`. The feed holds no time, so `time` stays `None`.
+
 The tests
 
 `uv run pytest tests/test_artshub.py` runs the tests. The tests use a saved
@@ -52,12 +58,15 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import date, datetime
 from urllib.parse import quote, unquote, urlsplit
 
+from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 
 from gigmap import sources
 from gigmap.logger import log_request
+from gigmap.schedule import extract_schedule
 
 SITE_URL = "https://www.artshub.com.au"
 SITE_HOST = urlsplit(SITE_URL).netloc
@@ -113,6 +122,7 @@ RETRY_DELAY_SECONDS = 1.0
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+EVENT_STARTS_RE = re.compile(r"Event Starts\s*:?\s*([A-Z][a-z]{2} \d{1,2}, \d{4})")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -138,6 +148,23 @@ def split_names(value: object) -> list[str]:
     if not isinstance(value, str):
         return []
     return [name.strip() for name in value.split(",") if name.strip()]
+
+
+def parse_event_page(html: str) -> tuple[str, date | None]:
+    """Return the body text and the `Event Starts` date of one event page.
+
+    A missing part gives `""` or None.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.select_one("div.the-content")
+    match = EVENT_STARTS_RE.search(soup.get_text(" ", strip=True))
+    start = None
+    if match:
+        try:
+            start = datetime.strptime(match.group(1), "%b %d, %Y").date()
+        except ValueError:
+            pass
+    return (body.get_text(" ", strip=True) if body else ""), start
 
 
 def venue_url(name: str | None, address: str | None) -> str | None:
@@ -341,12 +368,20 @@ class ArtshubSource:
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         """Return the detail of one event.
 
-        The feed holds no time that the module reports, so the read adds
-        nothing and makes no request.
+        The read makes one request for the event page and adds the schedule
+        of its text. The feed holds no time, so `time` stays `None`. A failed
+        read gives None.
         """
         if DETAIL_URL_RE.fullmatch(detail_url) is None:
             return None
-        return sources.GigDetail(detail_url=detail_url)
+        try:
+            page = await self._text(detail_url)
+        except sources.SourceError as error:
+            LOGGER.warning("cannot read %s: %s", detail_url, error)
+            return None
+        body, reference = parse_event_page(page or "")
+        schedule = extract_schedule(body, reference)
+        return sources.GigDetail(detail_url=detail_url, **schedule.model_dump())
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""
