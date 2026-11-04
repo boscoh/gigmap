@@ -286,8 +286,46 @@ def test_the_event_line_holds_every_gig_field(
         "image_url": None,
         "image_alt": None,
         "time": "8:30pm",
+        "date_start": None,
+        "date_end": None,
+        "days": [],
+        "hours": [],
     }
     assert ("gigs", "2026-10-01", "2026-10-02") in fake.calls
+
+
+def test_the_event_line_copies_the_schedule_and_replaces_the_dates() -> None:
+    gig = sources.Gig(
+        artist="Act", date="2026-10-01", end_date="2026-10-09", venue="V"
+    )
+    hours = sources.Hours(days=[2, 3], opens="11:00", closes="17:00")
+    detail = sources.GigDetail(
+        detail_url="u",
+        date_start="2026-10-03",
+        date_end="2026-10-05",
+        days=[2, 3],
+        hours=[hours],
+    )
+
+    data = json.loads(server.event_line(0, gig, detail, None))["gig"]
+
+    assert data["date"] == "2026-10-03"
+    assert data["end_date"] == "2026-10-05"
+    assert data["date_start"] == "2026-10-03"
+    assert data["days"] == [2, 3]
+    assert data["hours"] == [hours.model_dump()]
+
+
+def test_the_event_line_without_a_detail_keeps_the_gig_dates() -> None:
+    gig = sources.Gig(
+        artist="Act", date="2026-10-01", end_date="2026-10-09", venue="V"
+    )
+
+    data = json.loads(server.event_line(0, gig, None, None))["gig"]
+
+    assert (data["date"], data["end_date"]) == ("2026-10-01", "2026-10-09")
+    assert data["time"] is None
+    assert data["hours"] == []
 
 
 def _lines(response: Any) -> list[dict[str, Any]]:

@@ -266,25 +266,24 @@ async def gig_time(
     source: sources.GigSource,
     gig: sources.Gig,
     semaphore: asyncio.Semaphore,
-) -> str | None:
+) -> sources.GigDetail | None:
     # A source can hold the time in the gig list. A read then costs one
     # request and adds nothing, so the time of the list stays.
-    if gig.time:
-        return gig.time
     detail_url = gig.detail_url or ""
+    if gig.time:
+        return sources.GigDetail(detail_url=detail_url, time=gig.time)
     if not detail_url:
         return None
     async with semaphore:
-        data = await source.gig_detail(detail_url)
-    return data.time if data is not None else None
+        return await source.gig_detail(detail_url)
 
 
 async def detail_read(
     source: sources.GigSource,
     gig: sources.Gig,
     semaphore: asyncio.Semaphore,
-) -> str | None:
-    """Return the start time of one gig, and None when the read fails."""
+) -> sources.GigDetail | None:
+    """Return the detail of one gig, and None when the read fails."""
     try:
         return await gig_time(source, gig, semaphore)
     except Exception:
@@ -318,14 +317,22 @@ def venue_failure_text(error: Exception) -> str:
 def event_line(
     index: int,
     gig: sources.Gig,
-    time_text: str | None,
+    detail: sources.GigDetail | None,
     venue: sources.Venue | Exception | None,
 ) -> str:
     """Return the one stream line of a gig, with all of its data."""
     data = gig.model_dump()
-    # The line holds the time that the detail read found, so the page
-    # needs no second line for it.
-    data["time"] = time_text
+    # The line holds the detail that the read found, so the page needs no
+    # second line for it. A text range replaces the feed range.
+    schedule = (detail or sources.GigDetail(detail_url="")).model_dump()
+    data["time"] = schedule["time"]
+    for field in ("date_start", "date_end", "days", "hours"):
+        data[field] = schedule[field]
+    start, end = schedule["date_start"], schedule["date_end"]
+    if start and start != gig.date:
+        data["date"] = start
+    if end and end != gig.end_date:
+        data["end_date"] = None if end == start else end
     line: dict[str, object] = {"index": index, "gig": data, "venue": None}
     if isinstance(venue, Exception):
         line["error"] = venue_failure_text(venue)
@@ -360,11 +367,11 @@ async def event_lines(
             )
 
     async def one(index: int, gig: sources.Gig) -> str:
-        time_text = await times[index]
+        detail = await times[index]
         venue: sources.Venue | Exception | None = None
         if gig.venue_url:
             venue = await venues[gig.venue_url]
-        return event_line(index, gig, time_text, venue)
+        return event_line(index, gig, detail, venue)
 
     tasks = [
         asyncio.create_task(one(index, gig))

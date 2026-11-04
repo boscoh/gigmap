@@ -82,6 +82,21 @@ Two gaps, and the module docstring records both: the feed holds no price and
 no ticket data, and the feed holds no image. An image costs one request for
 each event.
 
+## The schedule
+
+The feed holds no time, so `time` stays `None`. `gig_detail` makes one request
+for the event page, reads the text of `div.the-content`, and passes it to
+`extract_schedule` (`gigmap/schedule.py`). The result fills the `GigDetail`
+fields `date_start`, `date_end`, `days` (0 = Monday) and `hours` (a list of
+`days`, `opens`, `closes`). The event stream line copies the four fields. A text
+date range replaces `date` and `end_date` when it differs. This is display
+only. Unclear text gives an empty schedule, and a failed read gives `None`.
+
+Deploy note: `CachedSource.gig_detail` keeps each detail in
+`data/gigs/artshub_<slug>.json` for 30 days. Old files hold no schedule, so
+delete them one time with `rm -f data/gigs/artshub_*.json`. `DAYS_VERSION`
+stays `v9`, because `Gig` does not change.
+
 # Arts Centre Melbourne
 
 Target: `https://www.artscentremelbourne.com.au/whats-on/event-calendar`

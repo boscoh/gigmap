@@ -102,8 +102,25 @@ class Gig(BaseModel):
     time: str | None = None
 
 
-class GigDetail(BaseModel):
-    """The detail of one gig. That is the start time."""
+class Hours(BaseModel):
+    """The opening hours of some days. Days: 0 = Monday to 6 = Sunday."""
+
+    days: list[int]
+    opens: str
+    closes: str
+
+
+class Schedule(BaseModel):
+    """The run of an event: an ISO date range, the days and the hours."""
+
+    date_start: str | None = None
+    date_end: str | None = None
+    days: list[int] = Field(default_factory=list)
+    hours: list[Hours] = Field(default_factory=list)
+
+
+class GigDetail(Schedule):
+    """The detail of one gig. That is the start time and the schedule."""
 
     detail_url: str
     time: str | None = None
