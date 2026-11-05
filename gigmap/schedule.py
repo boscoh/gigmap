@@ -19,7 +19,7 @@ TOKEN = re.compile(
     rf"""\b(?P<dated>{DAY},?\s+(?:\d{{1,2}}{ORD}\s+)?{MONTH}\b)
     |\b{TIME}\s*(?:-|to)\s*{TIME}\b
     |\b(?P<range>{DAY}\s*(?:-|to)\s*{DAY})\b
-    |\b(?P<day>{DAY})\b
+    |\b(?:(?:every|each)\s+)?(?P<day>{DAY})\b
     |\b(?P<daily>daily|every day)\b""",
     re.I | re.X,
 )
@@ -56,7 +56,8 @@ def _clock(h: str, m: str | None, meridiem: str | None) -> tuple[int, int] | Non
     return hour, minute
 
 
-def _hours(match: re.Match[str], days: list[int]) -> Hours | None:
+def _pair(match: re.Match[str]) -> tuple[str, str] | None:
+    """Return the opening and closing time of one time token, or None."""
     h1, m1, a1, h2, m2, a2 = match.groups()[1:7]  # after the `dated` group
     if not (a1 or a2 or (m1 and m2)):
         return None  # "24 to 28" is a date, not a time
@@ -67,7 +68,12 @@ def _hours(match: re.Match[str], days: list[int]) -> Hours | None:
         return None
     if inherited and start >= end and start[0] >= 12:
         start = (start[0] - 12, start[1])
-    return Hours(days=sorted(days), opens="%02d:%02d" % start, closes="%02d:%02d" % end)
+    return "%02d:%02d" % start, "%02d:%02d" % end
+
+
+def _hours(match: re.Match[str], days: list[int]) -> Hours | None:
+    pair = _pair(match)
+    return Hours(days=sorted(days), opens=pair[0], closes=pair[1]) if pair else None
 
 
 def _find_hours(sentences: list[str]) -> list[Hours]:
@@ -75,9 +81,12 @@ def _find_hours(sentences: list[str]) -> list[Hours]:
     for s in sentences:
         group: list[int] = []
         last_end = 0
+        # A time that comes before its days, as in "11am - 3pm, Wednesday to Friday".
+        ahead: tuple[str, str] | None = None
+        ahead_end = 0
         for m in TOKEN.finditer(s):
             if m["dated"]:
-                group = []
+                group, ahead = [], None
             elif m["range"] or m["day"] or m["daily"]:
                 if m["daily"]:
                     days = list(range(7))
@@ -88,6 +97,11 @@ def _find_hours(sentences: list[str]) -> list[Hours]:
                     i, j = _day(a), _day(b)
                     days = list(range(i, j + 1)) if i <= j else [*range(i, 7), *range(j + 1)]
                 joined = group and JOIN.fullmatch(s[last_end : m.start()])
+                if ahead and not group and JOIN.fullmatch(s[ahead_end : m.start()]):
+                    entry = Hours(days=days, opens=ahead[0], closes=ahead[1])
+                    if entry not in found:
+                        found.append(entry)
+                    ahead = None
                 group = group + days if joined else days
                 last_end = m.end()
             elif group:
@@ -95,6 +109,9 @@ def _find_hours(sentences: list[str]) -> list[Hours]:
                 if entry and entry not in found:
                     found.append(entry)
                 group = []
+            else:
+                ahead = _pair(m)
+                ahead_end = m.end()
     return found
 
 
@@ -134,6 +151,8 @@ def extract_schedule(text: str, reference: date | None = None) -> Schedule:
         hours = _find_hours(kept)
         # ponytail: a day list with no times gives no hours
         # ponytail: forms such as "M - F 10-7 SA 9-6" are not read
+        # ponytail: a table of dates such as "Thu 5 Nov 10am - 6pm" is not read;
+        # it has the shape of a one-off session list, so a guess could be wrong.
         start, end = _find_dates(" ".join(kept), (reference or date.today()).year)
         days = sorted({d for h in hours for d in h.days})
         return Schedule(date_start=start, date_end=end, days=days, hours=hours)

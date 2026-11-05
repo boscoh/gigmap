@@ -89,6 +89,10 @@ takes the text of `div.the-content`, and passes it to `extract_schedule`
 (`gigmap/schedule.py`). The schedule is a date range, the `days` (0 = Monday)
 and the `hours` (a list of `days`, `opens`, `closes`).
 
+`docs/schedule-truth.md` holds the truth table of a live two week read of
+ArtsHub and What's On, with the mismatch count of the parser. What's On
+prose states no weekly schedule, so all six rows hold ArtsHub page text.
+
 `fit_dates` then checks the schedule against the chosen dates:
 
 - A gig that is closed on every chosen date leaves the list.

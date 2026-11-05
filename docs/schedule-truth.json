@@ -1,0 +1,68 @@
+[
+  {
+    "source": "artshub",
+    "title": "Annalouise Paul: Uncharted Waters. The Journey of Mother Tongue",
+    "url": "https://www.artshub.com.au/event/annalouise-paul-uncharted-waters-the-journey-of-mother-tongue-2872630/",
+    "text": "Exhibition Dates: 9 September – 14 November 2026, Walker Street Gallery and Arts Centre, Open 11am – 3pm, Wednesday to Saturday",
+    "days": [2, 3, 4, 5],
+    "hours": "11:00-15:00",
+    "dates": ["2026-09-09", "2026-11-14"],
+    "reference": "2026-09-09",
+    "note": "hours come before the days"
+  },
+  {
+    "source": "artshub",
+    "title": "Obiectivus",
+    "url": "https://www.artshub.com.au/event/obiectivus-2877497/",
+    "text": "Deakin University Art Gallery Melbourne Burwood Campus 221 Burwood Highway, Burwood Victoria 3125 Free Admission Monday to Friday, 10am – 4pm (closed public holidays)",
+    "days": [0, 1, 2, 3, 4],
+    "hours": "10:00-16:00",
+    "dates": [],
+    "reference": "2026-10-22",
+    "note": "the text states no run"
+  },
+  {
+    "source": "artshub",
+    "title": "Between two Bays: Graeme Altmann",
+    "url": "https://www.artshub.com.au/event/between-two-bays-graeme-altmann-2878996/",
+    "text": "Exhibition Between two Bays: Graeme Altmann is on display at Bayside Gallery from 31 October – 13 December 2026. Opening hours Bayside Gallery is open Wednesday to Friday 11am – 5pm and Saturday and Sunday 1pm – 5pm.",
+    "days": [2, 3, 4, 5, 6],
+    "hours": "11:00-17:00",
+    "dates": ["2026-10-31", "2026-12-13"],
+    "reference": "2026-10-31",
+    "note": "second hours group: Sat-Sun 13:00-17:00"
+  },
+  {
+    "source": "artshub",
+    "title": "Tasting notes: Evie Cahir",
+    "url": "https://www.artshub.com.au/event/tasting-notes-evie-cahir-2878990/",
+    "text": "Exhibition Tasting notes: Evie Cahir is on display at Bayside Gallery from 31 October – 13 December 2026. Opening hours Bayside Gallery is open Wednesday to Friday 11am – 5pm and Saturday and Sunday 1pm – 5pm.",
+    "days": [2, 3, 4, 5, 6],
+    "hours": "11:00-17:00",
+    "dates": ["2026-10-31", "2026-12-13"],
+    "reference": "2026-10-31",
+    "note": "second hours group: Sat-Sun 13:00-17:00"
+  },
+  {
+    "source": "artshub",
+    "title": "Screening: Nicholas Currie, ‘Rodney Currie Stars in a Movie’",
+    "url": "https://www.artshub.com.au/event/screening-nicholas-currie-rodney-currie-stars-in-a-movie-2878283/",
+    "text": "Screening continues until Saturday 21 November Wednesday – Saturday, 11am – 4pm",
+    "days": [2, 3, 4, 5],
+    "hours": "11:00-16:00",
+    "dates": [],
+    "reference": "2026-11-11",
+    "note": "the text gives an end only: until 2026-11-21"
+  },
+  {
+    "source": "artshub",
+    "title": "Qigong and Walking Meditation",
+    "url": "https://www.artshub.com.au/event/qigong-and-walking-meditation-2822592/",
+    "text": "Dates Every Wednesday 14 October- 18 November | 11:15am- 12:15pm",
+    "days": [2],
+    "hours": "11:15-12:15",
+    "dates": ["2026-10-14", "2026-11-18"],
+    "reference": "2026-10-14",
+    "note": "one day of the week, stated as `every Wednesday`"
+  }
+]
