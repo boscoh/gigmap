@@ -81,6 +81,7 @@ import asyncio
 import datetime
 import logging
 import re
+import time
 from urllib.parse import quote, unquote, urlsplit
 
 from curl_cffi import requests as curl_requests
@@ -402,6 +403,7 @@ class ArtsCentreSource:
             raise RuntimeError("use ArtsCentreSource as an async context manager")
         status = 0
         for attempt in range(1, REQUEST_ATTEMPTS + 1):
+            started = time.perf_counter()
             try:
                 response = await session.post(
                     EVENTS_URL,
@@ -409,21 +411,31 @@ class ArtsCentreSource:
                     headers=HEADERS,
                 )
             except curl_requests.RequestsError as error:
-                log_request(LOGGER.warning, "POST", EVENTS_URL, error=error)
+                log_request(
+                    LOGGER.warning,
+                    "POST",
+                    EVENTS_URL,
+                    seconds=f"{time.perf_counter() - started:.3f}",
+                    error=error,
+                    attempt=attempt,
+                )
                 if attempt == REQUEST_ATTEMPTS:
                     raise sources.SourceError(
                         f"cannot reach artscentremelbourne.com.au: {error}"
                     ) from error
                 await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
                 continue
+            seconds = f"{time.perf_counter() - started:.3f}"
             status = response.status_code
+            # The try number matters only when the call failed.
+            extra = {} if status == 200 else {"attempt": attempt}
             log_request(
                 LOGGER.info if status == 200 else LOGGER.warning,
                 "POST",
                 EVENTS_URL,
                 status=status,
-                reason=response.reason,
-                attempt=attempt,
+                seconds=seconds,
+                **extra,
             )
             if status == 200:
                 try:

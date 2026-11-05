@@ -35,6 +35,7 @@ async def geocode(query: str) -> dict | None:
         if delay > 0:
             await asyncio.sleep(delay)
         response = None
+        started = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.get(
@@ -53,7 +54,8 @@ async def geocode(query: str) -> dict | None:
                     "GET",
                     str(response.url),
                     status=response.status_code,
-                    reason=response.reason_phrase,
+                    seconds=f"{time.perf_counter() - started:.3f}",
+                    query=query,
                 )
         except httpx.HTTPError as error:
             log_request(LOGGER.warning, "GET", NOMINATIM_URL, query=query, error=error)

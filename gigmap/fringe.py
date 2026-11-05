@@ -104,6 +104,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date, timedelta
 from enum import Enum
@@ -632,23 +633,34 @@ class FringeSource:
             raise RuntimeError("use FringeSource as an async context manager")
         status = 0
         for attempt in range(1, SERVER_ERROR_ATTEMPTS + 1):
+            started = time.perf_counter()
             try:
                 response = await client.request(
                     method, url, params=params, json=body, headers=headers
                 )
             except httpx.HTTPError as error:
-                log_request(LOGGER.warning, method, url, error=error)
+                log_request(
+                    LOGGER.warning,
+                    method,
+                    url,
+                    seconds=f"{time.perf_counter() - started:.3f}",
+                    error=error,
+                    attempt=attempt,
+                )
                 raise sources.SourceError(
                     f"cannot reach melbournefringe.com.au: {error}"
                 ) from error
+            seconds = f"{time.perf_counter() - started:.3f}"
             status = response.status_code
+            # The try number matters only when the call failed.
+            extra = {} if status == 200 else {"attempt": attempt}
             log_request(
                 LOGGER.info if status == 200 else LOGGER.warning,
                 method,
                 str(response.url),
                 status=status,
-                reason=response.reason_phrase,
-                attempt=attempt,
+                seconds=seconds,
+                **extra,
             )
             if status == 200:
                 return response

@@ -91,6 +91,7 @@ import datetime
 import json
 import logging
 import re
+import time
 from urllib.parse import quote, unquote, urlsplit
 
 from bs4 import BeautifulSoup
@@ -536,21 +537,32 @@ class WhatsonSource:
             raise RuntimeError("use WhatsonSource as an async context manager")
         status = 0
         for attempt in range(1, REQUEST_ATTEMPTS + 1):
+            started = time.perf_counter()
             try:
                 response = await session.get(url, params=params, headers=HEADERS)
             except curl_requests.RequestsError as error:
-                log_request(LOGGER.warning, "GET", url, error=error)
+                log_request(
+                    LOGGER.warning,
+                    "GET",
+                    url,
+                    seconds=f"{time.perf_counter() - started:.3f}",
+                    error=error,
+                    attempt=attempt,
+                )
                 raise sources.SourceError(
                     f"cannot reach whatson.melbourne.vic.gov.au: {error}"
                 ) from error
+            seconds = f"{time.perf_counter() - started:.3f}"
             status = response.status_code
+            # The try number matters only when the call failed.
+            extra = {} if status == 200 else {"attempt": attempt}
             log_request(
                 LOGGER.info if status == 200 else LOGGER.warning,
                 "GET",
                 response.url or url,
                 status=status,
-                reason=response.reason,
-                attempt=attempt,
+                seconds=seconds,
+                **extra,
             )
             if status == 200:
                 return response.text

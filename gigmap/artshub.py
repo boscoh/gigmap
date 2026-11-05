@@ -60,6 +60,7 @@ feed page, so they do not touch the live site.
 import asyncio
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from urllib.parse import quote, unquote, urlsplit
@@ -309,13 +310,22 @@ class ArtshubSource:
             raise RuntimeError("use ArtshubSource as an async context manager")
         status = 0
         for attempt in range(1, SERVER_ERROR_ATTEMPTS + 1):
+            started = time.perf_counter()
             try:
                 response = await session.get(url, params=params, headers=HEADERS)
             except curl_requests.RequestsError as error:
-                log_request(LOGGER.warning, "GET", url, error=error)
+                log_request(
+                    LOGGER.warning,
+                    "GET",
+                    url,
+                    seconds=f"{time.perf_counter() - started:.3f}",
+                    error=error,
+                    attempt=attempt,
+                )
                 raise sources.SourceError(
                     f"cannot reach artshub.com.au: {error}"
                 ) from error
+            seconds = f"{time.perf_counter() - started:.3f}"
             status = response.status_code
             if status == 200:
                 log_request(
@@ -323,8 +333,7 @@ class ArtshubSource:
                     "GET",
                     response.url or url,
                     status=status,
-                    reason=response.reason,
-                    attempt=attempt,
+                    seconds=seconds,
                 )
                 return response.text
             if status == 404 and missing_ok:
@@ -335,7 +344,7 @@ class ArtshubSource:
                 "GET",
                 response.url or url,
                 status=status,
-                reason=response.reason,
+                seconds=seconds,
                 cf_mitigated=mitigated,
                 attempt=attempt,
             )

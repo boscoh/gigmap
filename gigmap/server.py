@@ -146,7 +146,9 @@ async def log_incoming_request(
     path = request.url.path
     if request.url.query:
         path = f"{path}?{request.url.query}"
+    # A local client says nothing about the request, so it stays out.
     client = request.client.host if request.client else ""
+    origin = {} if client in ("", "127.0.0.1", "::1") else {"client": client}
     try:
         response = await call_next(request)
     except Exception:
@@ -155,7 +157,7 @@ async def log_incoming_request(
             request.method,
             path,
             status=500,
-            client=client,
+            **origin,
             seconds=f"{time.perf_counter() - started:.3f}",
         )
         raise
@@ -165,7 +167,7 @@ async def log_incoming_request(
         request.method,
         path,
         status=response.status_code,
-        client=client,
+        **origin,
         seconds=f"{time.perf_counter() - started:.3f}",
     )
     return response
@@ -518,7 +520,9 @@ def serve(
             port=port,
             log_config=None,
             reload=True,
-            reload_dirs=[str(ROOT_DIR)],
+            # Watch only the code. The cache writes many JSON files into
+            # data/, so a watch of the root logs a change line per request.
+            reload_dirs=[str(PACKAGE_DIR)],
         )
     else:
         uvicorn.run(

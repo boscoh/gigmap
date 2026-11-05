@@ -10,6 +10,7 @@ import asyncio
 import logging
 import random
 import re
+import time
 from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
@@ -251,15 +252,24 @@ class BeatSource:
             attempts = 0
             while True:
                 attempts += 1
+                started = time.perf_counter()
                 try:
                     response = await session.get(
                         url, params=params, headers=HEADERS, impersonate=target
                     )
                 except curl_requests.RequestsError as error:
-                    log_request(LOGGER.warning, "GET", url, error=error)
+                    log_request(
+                        LOGGER.warning,
+                        "GET",
+                        url,
+                        seconds=f"{time.perf_counter() - started:.3f}",
+                        error=error,
+                        attempt=attempts,
+                    )
                     raise sources.SourceError(
                         f"cannot reach beat.com.au: {error}"
                     ) from error
+                seconds = f"{time.perf_counter() - started:.3f}"
                 status = response.status_code
                 if status == 200:
                     log_request(
@@ -267,8 +277,7 @@ class BeatSource:
                         "GET",
                         response.url or url,
                         status=status,
-                        reason=response.reason,
-                        attempt=attempts,
+                        seconds=seconds,
                     )
                     # Keep the target that passed, so the later reads start there.
                     _current_target = target
@@ -279,7 +288,7 @@ class BeatSource:
                     "GET",
                     response.url or url,
                     status=status,
-                    reason=response.reason,
+                    seconds=seconds,
                     cf_mitigated=mitigated,
                     cf_ray=response.headers.get("cf-ray"),
                     attempt=attempts,
