@@ -171,8 +171,8 @@ def test_a_beat_free_category_holds_a_free_ticket() -> None:
 
 
 def test_the_root_page_answers_the_all_source() -> None:
-    assert server.page_source_name("/") == "gig"
-    assert server.page_source_name("/nowhere/") == "gig"
+    assert server.page_source_name("/") == "gigs"
+    assert server.page_source_name("/nowhere/") == "gigs"
 
 
 def test_a_page_prefix_answers_that_source() -> None:
@@ -202,14 +202,14 @@ def test_each_site_serves_its_own_page(
     http, _ = client
 
     root = http.get("/")
-    all_page = http.get("/gig/")
+    all_page = http.get("/gigs/")
     beat_page = http.get("/beat/")
     fringe = http.get("/fringe/")
 
     assert root.status_code == 200
     # The root is the landing page. It holds a link for each page below
     # and no source, so it carries no API base.
-    assert 'href="gig/"' in root.text
+    assert 'href="gigs/"' in root.text
     assert 'href="whatson/"' in root.text
     assert 'href="whatsonart/"' in root.text
     assert 'href="art/"' in root.text
@@ -217,7 +217,7 @@ def test_each_site_serves_its_own_page(
     assert 'window.API_BASE' not in root.text
     assert all_page.status_code == 200
     assert '<title>Melb Gig Map</title>' in all_page.text
-    assert 'window.API_BASE = "/api/gig";' in all_page.text
+    assert 'window.API_BASE = "/api/gigs";' in all_page.text
     assert beat_page.status_code == 200
     assert '<title>Melb Gig Map</title>' in beat_page.text
     assert 'window.API_BASE = "/api/beat";' in beat_page.text
@@ -257,13 +257,13 @@ def test_a_read_answers_on_the_fringe_path(
 def test_each_source_page_answers_its_own_source(
     client: tuple[TestClient, FakeSource],
 ) -> None:
-    """`/gig/` answers the gig map, so the root page answers no source."""
+    """`/gigs/` answers the gig map, so the root page answers no source."""
     http, _ = client
 
-    all_page = http.get("/gig/")
+    all_page = http.get("/gigs/")
     beat_page = http.get("/beat/")
 
-    assert 'window.API_BASE = "/api/gig";' in all_page.text
+    assert 'window.API_BASE = "/api/gigs";' in all_page.text
     assert 'window.API_BASE = "/api/beat";' in beat_page.text
 
 

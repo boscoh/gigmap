@@ -13,6 +13,7 @@ SOURCE = sources.SourceInfo(
     heading="Melb Art Map",
     name="whatsonart",
     home_url=whatson.SEARCH_URL,
+    noun="exhibits",
 )
 
 

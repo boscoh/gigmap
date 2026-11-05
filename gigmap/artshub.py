@@ -83,6 +83,7 @@ SOURCE = sources.SourceInfo(
     heading="Melb Art Map",
     name="artshub.com.au",
     home_url=f"{SITE_URL}/event/search/?location=melbourne",
+    noun="exhibits",
 )
 
 # The feed keeps one tag for each city. The read asks for the tag and keeps

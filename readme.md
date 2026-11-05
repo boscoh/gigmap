@@ -50,7 +50,7 @@ uv run gigmap serve
 ```
 
 Then open `http://127.0.0.1:8000/` for the landing page. The link of each
-site goes to a path of its own: `/gig/`, `/beat/`, `/artscentre/`,
+site goes to a path of its own: `/gigs/`, `/beat/`, `/artscentre/`,
 `/artshub/`, `/fringe/`, and `/whatson/`.
 
 ```bash
@@ -82,17 +82,17 @@ One server answers every site. The path selects the site:
 | `/beat/` | beat.com.au | one gig card of the guide | `/api/beat/*` |
 | `/fringe/` | melbournefringe.com.au | one performance of the festival | `/api/fringe/*` |
 | `/whatson/` | whatson.melbourne.vic.gov.au | one session of an event | `/api/whatson/*` |
-| `/gig/` | artscentre, beat, and whatson | one gig of any site | `/api/gig/*` |
+| `/gigs/` | artscentre, beat, and whatson | one gig of any site | `/api/gigs/*` |
 
 A wrong source name answers 404, so one site never answers for another site.
 Each site keeps its own cache files, so one site never answers from the cache
 of the other.
 
-The `/gig/` page reads its sites at the same time and joins the gigs. It
+The `/gigs/` page reads its sites at the same time and joins the gigs. It
 uses the cache files of those sites. A site that fails is left out and
 logged. The page does not remove a show that two sites list.
 
-The `/gig/` page reads the sites that give a time of day for each gig:
+The `/gigs/` page reads the sites that give a time of day for each gig:
 artscentre, beat, and whatson. It does not read artshub or fringe, whose
 pages are still at `/artshub/` and `/fringe/`.
 

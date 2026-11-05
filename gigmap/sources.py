@@ -27,6 +27,7 @@ class SourceInfo(BaseModel):
     heading: str = "Melb Gig Map"  # the title in the page header
     name: str
     home_url: str
+    noun: str = "gigs"  # what the page counts, as in "3 / 12 gigs"
     parts: list["SourceInfo"] = Field(default_factory=list)
 
 

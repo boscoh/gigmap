@@ -775,7 +775,7 @@
 
             .scroll-room
             .text-muted.text-center.py-4(v-if="!gigs.length && !loading && startDate")
-              | No gigs in this range.
+              | No ${SOURCE.noun} in this range.
     `);
 
     const {createApp, ref, computed, nextTick, onMounted, watch} = Vue;
@@ -1140,7 +1140,7 @@
             // The total shows only while the stream runs, so the last
             // line is the count that the page holds.
             const of = total.value && streaming.value ? ` / ${total.value}` : "";
-            return `${gigs.value.length}${of} gigs`;
+            return `${gigs.value.length}${of} ${SOURCE.noun}`;
         });
 
         const statusText = gigsText;

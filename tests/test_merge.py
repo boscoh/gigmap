@@ -93,12 +93,12 @@ def test_the_read_fails_when_every_member_fails() -> None:
 
 
 def test_the_all_page_and_reads_are_served() -> None:
-    assert server.page_source_name("/gig/") == "gig"
-    assert server.api_source_name("/api/gig/events") == "gig"
+    assert server.page_source_name("/gigs/") == "gigs"
+    assert server.api_source_name("/api/gigs/events") == "gigs"
 
 
 def test_the_all_page_lists_the_short_names() -> None:
-    parts = server.SOURCE_INFO["gig"].parts
+    parts = server.SOURCE_INFO["gigs"].parts
     assert [part.name for part in parts] == ["artscentre", "beats", "whatson"]
     assert parts[1].home_url == server.SOURCE_INFO["beat"].home_url
     assert parts[2].home_url == server.SOURCE_INFO["whatson"].home_url
@@ -114,3 +114,11 @@ def test_the_art_page_merges_artshub_and_whatsonart() -> None:
     for name in ("art", "artshub", "whatsonart"):
         assert server.SOURCE_INFO[name].heading == "Melb Art Map"
     assert server.SOURCE_INFO["beat"].heading == "Melb Gig Map"
+
+
+def test_the_art_page_counts_exhibits() -> None:
+    for name in ("art", "artshub", "whatsonart"):
+        assert server.SOURCE_INFO[name].noun == "exhibits"
+
+    for name in ("gigs", "artscentre", "beat", "fringe", "whatson"):
+        assert server.SOURCE_INFO[name].noun == "gigs"
