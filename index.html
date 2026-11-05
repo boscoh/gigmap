@@ -24,7 +24,7 @@
     body {
       margin: 0 auto;
       padding: 2rem 1.25rem 4rem;
-      max-width: 46rem;
+      max-width: 72rem;
       color: var(--ink);
       background: transparent;
       font: 1.0625rem/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -57,8 +57,8 @@
     .tagline {
       margin: 1rem 0 2rem;
       color: var(--mute);
-      font-size: 1.2rem;
-      line-height: 1.2;
+      font-size: 1.0em;
+      line-height: 1.3em;
     }
 
     h2 {
@@ -68,6 +68,23 @@
     p {
       max-width: 34rem;
     }
+    /* The two maps sit side by side, and stack on a narrow screen. */
+    .cols {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 2rem 2.5rem;
+    }
+
+    .cols h2 {
+      margin-top: 0;
+    }
+
+    @media (max-width: 760px) {
+      .cols {
+        grid-template-columns: 1fr;
+      }
+    }
+
 
     ul {
       display: grid;
@@ -100,27 +117,44 @@
       font-size: 0.75rem;
     }
 
+    /* A single source sits under the group page of its map, so its button
+       is smaller than the button of the group. */
+    li.source a {
+      padding: 0.3rem 0.7rem;
+      font-size: 0.85rem;
+    }
+
+    li.source .path {
+      font-size: 0.62rem;
+    }
+
     a {
       color: inherit;
     }
   </style>
 </head>
 <body>
-  <h1>Melb Gig Map</h1>
-  <p class="tagline">All the gigs of one day, from the event sites of Melbourne, in one list and on one map.</p>
-  <ul>
-    <li><a href="gigs/"><span>Gigs</span><span class="path">ArtsCentre+Beats+WhatsOn</span></a></li>
-    <li><a href="artscentre/"><span>ArtsCentre</span><span class="path">artscentremelbourne.com.au</span></a></li>
-    <li><a href="beat/"><span>Beat</span><span class="path">beat.com.au</span></a></li>
-    <li><a href="whatson/"><span>WhatsOn</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
-  </ul>
+  <div class="cols">
+    <section>
+      <h1>Melb Gig Map</h1>
+      <p class="tagline">The gigs and shows of one day, in a list, on a map.</p>
+      <ul>
+        <li><a href="gigs/"><span>Gigs</span><span class="path">ArtsCentre+Beats+WhatsOn</span></a></li>
+        <li class="source"><a href="artscentre/"><span>ArtsCentre</span><span class="path">artscentremelbourne.com.au</span></a></li>
+        <li class="source"><a href="beat/"><span>Beat</span><span class="path">beat.com.au</span></a></li>
+        <li class="source"><a href="whatson/"><span>WhatsOn</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
+      </ul>
+    </section>
 
-  <h2>Melb Art Map</h2>
-  <p class="tagline">The art and the exhibitions of one day, in one list and on one map.</p>
-  <ul>
-    <li><a href="art/"><span>Art</span><span class="path">ArtsHub+WhatsOn Art</span></a></li>
-    <li><a href="artshub/"><span>ArtsHub</span><span class="path">artshub.com.au</span></a></li>
-    <li><a href="whatsonart/"><span>WhatsOn Art</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
-  </ul>
+    <section>
+      <h2>Melb Art Map</h2>
+      <p class="tagline">The exhibitions of one day, in one list and on a map.</p>
+      <ul>
+        <li><a href="art/"><span>Art</span><span class="path">ArtsHub+WhatsOnArt</span></a></li>
+        <li class="source"><a href="artshub/"><span>ArtsHub</span><span class="path">artshub.com.au</span></a></li>
+        <li class="source"><a href="whatsonart/"><span>WhatsOnArt</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
+      </ul>
+    </section>
+  </div>
 </body>
 </html>
