@@ -169,17 +169,47 @@ def test_a_page_with_no_body_gives_nothing() -> None:
     assert artshub.parse_event_page("<html></html>") == ("", None)
 
 
-def test_the_detail_holds_the_schedule_of_the_page() -> None:
-    async def run() -> sources.GigDetail | None:
+GIG_URL = "https://www.artshub.com.au/event/x-1/"
+
+
+def gigs_on(start: str, end: str, page: str | None) -> list[sources.Gig]:
+    """Return the gigs of one fake event, as the source filters them."""
+
+    async def run() -> list[sources.Gig]:
         source = artshub.ArtshubSource()  # no session: a network call raises
 
-        async def fake(url: str, *_a: object, **_k: object) -> str:
-            return PAGE
+        async def feed(*_a: object, **_k: object) -> list[sources.Gig]:
+            return [sources.Gig(artist="X", detail_url=GIG_URL)]
 
-        source._text = fake  # type: ignore[method-assign]
-        return await source.gig_detail("https://www.artshub.com.au/event/x-1/")
+        async def text(*_a: object, **_k: object) -> str:
+            if page is None:
+                raise sources.SourceError("down")
+            return page
 
-    detail = asyncio.run(run())
-    assert detail is not None
-    assert detail.days == [1, 2, 3, 4, 5, 6]
-    assert detail.time is None
+        source._feed_page = feed  # type: ignore[method-assign]
+        source._text = text  # type: ignore[method-assign]
+        return await source.gigs(start, end)
+
+    return asyncio.run(run())
+
+
+# PAGE says "Open Tuesday to Sunday 10am - 5pm". 2026-11-02 is a Monday.
+@pytest.mark.parametrize(
+    "start, end, times",
+    [
+        ("2026-11-05", "2026-11-05", ["10:00am"]),  # Thursday: open
+        ("2026-11-02", "2026-11-02", []),  # Monday: closed
+        ("2026-11-02", "2026-11-03", ["10:00am"]),  # Monday and Tuesday
+    ],
+)
+def test_a_gig_keeps_only_the_days_that_it_is_open(start, end, times) -> None:
+    assert [g.time for g in gigs_on(start, end, PAGE)] == times
+
+
+def test_a_gig_with_no_readable_page_stays_with_no_time() -> None:
+    assert [g.time for g in gigs_on("2026-11-02", "2026-11-02", None)] == [None]
+
+
+def test_a_gig_with_no_schedule_stays_with_no_time() -> None:
+    page = "<div class='the-content'>A night of music.</div>"
+    assert [g.time for g in gigs_on("2026-11-02", "2026-11-02", page)] == [None]

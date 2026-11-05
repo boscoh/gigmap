@@ -4,8 +4,8 @@ from datetime import date
 
 import pytest
 
-from gigmap.schedule import extract_schedule
-from gigmap.sources import Hours
+from gigmap.schedule import extract_schedule, fit_dates
+from gigmap.sources import Hours, Schedule
 
 
 def H(days, opens, closes):
@@ -57,3 +57,29 @@ def test_extract_schedule(text, reference, hours, start, end):
     assert got.hours == hours
     assert got.days == sorted({d for h in hours for d in h.days})
     assert (got.date_start, got.date_end) == (start, end)
+
+
+# Hours: Wednesday to Friday 11am - 5pm, Saturday 1pm - 5pm. 2026-11-05 is a Thursday.
+RUN = Schedule(
+    date_start="2026-10-31",
+    date_end="2026-12-13",
+    days=[2, 3, 4, 5],
+    hours=[Hours(days=[2, 3, 4], opens="11:00", closes="17:00"), Hours(days=[5], opens="13:00", closes="17:00")],
+)
+FIT = [
+    (RUN, "2026-11-05", "2026-11-05", (True, "11:00am")),  # Thursday
+    (RUN, "2026-11-07", "2026-11-07", (True, "1:00pm")),  # Saturday
+    (RUN, "2026-11-02", "2026-11-02", (False, None)),  # Monday
+    (RUN, "2026-11-08", "2026-11-08", (False, None)),  # Sunday
+    (RUN, "2026-11-02", "2026-11-05", (True, "11:00am")),  # first open date: Wednesday
+    (RUN, "2026-12-14", "2026-12-14", (False, None)),  # after the run
+    (RUN, "2026-10-01", "2026-12-31", (True, "1:00pm")),  # long range: starts Sat 31 Oct
+    (Schedule(), "2026-11-02", "2026-11-02", (True, None)),  # no schedule
+    (Schedule(days=[1], hours=[]), "2026-11-02", "2026-11-02", (False, None)),
+    (Schedule(days=[0], hours=[Hours(days=[0], opens="00:30", closes="23:00")]), "2026-11-02", "2026-11-02", (True, "12:30am")),
+]
+
+
+@pytest.mark.parametrize("schedule, start, end, want", FIT)
+def test_fit_dates(schedule, start, end, want):
+    assert fit_dates(schedule, start, end) == want

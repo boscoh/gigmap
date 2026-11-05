@@ -5,7 +5,7 @@ Schedule. A form we miss gives an empty result, never a wrong one.
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from .sources import Hours, Schedule
 
@@ -139,3 +139,30 @@ def extract_schedule(text: str, reference: date | None = None) -> Schedule:
         return Schedule(date_start=start, date_end=end, days=days, hours=hours)
     except Exception:  # never raise on odd text
         return Schedule()
+
+
+def clock_text(hhmm: str) -> str:
+    """Return "13:00" as "1:00pm", the form of the time of a gig."""
+    hour, minute = int(hhmm[:2]), hhmm[3:]
+    return f"{hour % 12 or 12}:{minute}{'pm' if hour >= 12 else 'am'}"
+
+
+def fit_dates(schedule: Schedule, start_date: str, end_date: str) -> tuple[bool, str | None]:
+    """Return whether the event runs in the chosen dates, and its time then.
+
+    The dates are ISO strings. The event runs when one chosen date is inside
+    its text range and on one of its days. The time is the opening time of
+    the first such date. An event with no days, or no hours, has no time.
+    """
+    low, high = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    if schedule.date_start:
+        low = max(low, date.fromisoformat(schedule.date_start))
+    if schedule.date_end:
+        high = min(high, date.fromisoformat(schedule.date_end))
+    # Seven dates show every weekday, so a long range costs no more.
+    for offset in range(min(7, (high - low).days + 1)):
+        weekday = (low + timedelta(days=offset)).weekday()
+        if not schedule.days or weekday in schedule.days:
+            opens = next((h.opens for h in schedule.hours if weekday in h.days), None)
+            return True, clock_text(opens) if opens else None
+    return False, None

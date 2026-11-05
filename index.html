@@ -30,7 +30,7 @@
       font: 1.0625rem/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
     }
 
-    h1 {
+    h1, h2 {
       margin: 0 0 0.25rem;
       font-family: "Anton", system-ui, sans-serif;
       font-weight: 400;
@@ -41,14 +41,14 @@
 
     /* Outline title, in the spirit of the Beat logo. */
     @supports (-webkit-text-stroke: 1px currentColor) {
-      h1 {
+      h1, h2 {
         color: transparent;
         -webkit-text-stroke: 2.5px var(--ink);
       }
     }
 
     @media (max-width: 991.98px) {
-      h1 {
+      h1, h2 {
         font-size: 2.1rem;
         -webkit-text-stroke-width: 1.25px;
       }
@@ -59,6 +59,10 @@
       color: var(--mute);
       font-size: 1.2rem;
       line-height: 1.2;
+    }
+
+    h2 {
+      margin-top: 2.5rem;
     }
 
     p {
@@ -109,6 +113,14 @@
     <li><a href="artscentre/"><span>ArtsCentre</span><span class="path">artscentremelbourne.com.au</span></a></li>
     <li><a href="beat/"><span>Beat</span><span class="path">beat.com.au</span></a></li>
     <li><a href="whatson/"><span>WhatsOn</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
+  </ul>
+
+  <h2>Melb Art Map</h2>
+  <p class="tagline">The art and the exhibitions of one day, in one list and on one map.</p>
+  <ul>
+    <li><a href="art/"><span>Art</span><span class="path">ArtsHub+WhatsOn Art</span></a></li>
+    <li><a href="artshub/"><span>ArtsHub</span><span class="path">artshub.com.au</span></a></li>
+    <li><a href="whatsonart/"><span>WhatsOn Art</span><span class="path">whatson.melbourne.vic.gov.au</span></a></li>
   </ul>
 </body>
 </html>

@@ -24,6 +24,7 @@ class SourceInfo(BaseModel):
     """
 
     title: str
+    heading: str = "Melb Gig Map"  # the title in the page header
     name: str
     home_url: str
     parts: list["SourceInfo"] = Field(default_factory=list)
@@ -119,8 +120,8 @@ class Schedule(BaseModel):
     hours: list[Hours] = Field(default_factory=list)
 
 
-class GigDetail(Schedule):
-    """The detail of one gig. That is the start time and the schedule."""
+class GigDetail(BaseModel):
+    """The detail of one gig. That is the start time."""
 
     detail_url: str
     time: str | None = None

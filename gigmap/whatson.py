@@ -175,7 +175,9 @@ def absolute_url(value: object) -> str | None:
     return f"{SITE_URL}{path if path.startswith('/') else '/' + path}"
 
 
-def search_params(start_date: str, end_date: str) -> list[tuple[str, str]]:
+def search_params(
+    start_date: str, end_date: str, subcategories: tuple[str, ...] = SUBCATEGORIES
+) -> list[tuple[str, str]]:
     """Return the query params of one date range.
 
     The date filter is `dkw=specific_dates` and `date_range` as
@@ -190,7 +192,7 @@ def search_params(start_date: str, end_date: str) -> list[tuple[str, str]]:
         ("date_range", f"{start_date} to {end_date}"),
         ("q", ""),
     ]
-    params.extend(("scs[]", subcategory) for subcategory in SUBCATEGORIES)
+    params.extend(("scs[]", subcategory) for subcategory in subcategories)
     return params
 
 
@@ -499,6 +501,8 @@ class WhatsonSource:
     This class is the `sources.GigSource` implementation for the live site.
     """
 
+    subcategories = SUBCATEGORIES
+
     def __init__(self) -> None:
         self._session: curl_requests.AsyncSession | None = None
 
@@ -577,7 +581,7 @@ class WhatsonSource:
         seen: set[str] = set()
         candidates: list[sources.Gig] = []
         for page in range(1, MAX_PAGES + 1):
-            params = [*search_params(start_date, end_date), ("page", str(page))]
+            params = [*search_params(start_date, end_date, self.subcategories), ("page", str(page))]
             cards = parse_cards(await self._text(SEARCH_URL, params))
             for card in cards:
                 url = card.detail_url

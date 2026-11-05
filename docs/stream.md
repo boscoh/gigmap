@@ -130,7 +130,8 @@ lock, so a warm day has no serialization at all.
 ## The merge of sources
 
 `/api/<source>/events` always merges a set of members. A page of one source has
-one member. `/api/all/events` has the members of `ALL_MEMBERS`.
+one member. A group has its members in `GROUPS`: `/api/all/events` has
+artscentre, beat and whatson, and `/api/art/events` has artshub and whatsonart.
 
 - `event_stream` starts one `gigs` read for each member, and waits for the
   first list only. When every list fails, the route answers 502 with the

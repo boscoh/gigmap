@@ -84,18 +84,24 @@ each event.
 
 ## The schedule
 
-The feed holds no time, so `time` stays `None`. `gig_detail` makes one request
-for the event page, reads the text of `div.the-content`, and passes it to
-`extract_schedule` (`gigmap/schedule.py`). The result fills the `GigDetail`
-fields `date_start`, `date_end`, `days` (0 = Monday) and `hours` (a list of
-`days`, `opens`, `closes`). The event stream line copies the four fields. A text
-date range replaces `date` and `end_date` when it differs. This is display
-only. Unclear text gives an empty schedule, and a failed read gives `None`.
+The feed holds no time. `gigs` reads the event page of each gig, 5 at a time,
+takes the text of `div.the-content`, and passes it to `extract_schedule`
+(`gigmap/schedule.py`). The schedule is a date range, the `days` (0 = Monday)
+and the `hours` (a list of `days`, `opens`, `closes`).
 
-Deploy note: `CachedSource.gig_detail` keeps each detail in
-`data/gigs/artshub_<slug>.json` for 30 days. Old files hold no schedule, so
-delete them one time with `rm -f data/gigs/artshub_*.json`. `DAYS_VERSION`
-stays `v9`, because `Gig` does not change.
+`fit_dates` then checks the schedule against the chosen dates:
+
+- A gig that is closed on every chosen date leaves the list.
+- For an open gig, `time` is the opening time of the first open date, for
+  example `1:00pm`.
+- A gig with no readable page, or no schedule, stays with no time.
+
+The list waits for the page reads. `CachedSource` keeps the answer for the date
+range. `gig_detail` makes no request.
+
+Deploy note: `DAYS_VERSION` is now `v10`, because an old cached day list holds
+no filter. The server ignores the old day files, and the clean command removes
+them.
 
 # Arts Centre Melbourne
 
@@ -307,3 +313,9 @@ the JSON-LD `location`, and the ticket from the price-and-bookings box.
 
 One gap: `image_alt` comes from the card, because the JSON-LD block holds no
 alt text.
+
+# What's On Art
+
+Same site and same parse as What's On (`gigmap/whatson_art.py` only changes
+the filter). The subcategories are `art` and `exhibition`, under
+`c=things_to_do`. The page is `/whatsonart/`. It is not a member of `all`.

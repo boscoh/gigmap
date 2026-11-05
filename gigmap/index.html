@@ -558,7 +558,7 @@
         .gig-side.mb-lg-0(:style="sideWidth ? {'--side-width': sideWidth + 'px'} : null")
           .gig-head.d-flex.align-items-center(v-if="!isNarrow")
             h1.mb-0
-              a(href="/") Melb Gig Map
+              a(href="/") ${SOURCE.heading}
           .gig-head.text-muted(v-if="!isNarrow")
             ="data "
             ${sourceLinks(12)}
@@ -573,7 +573,7 @@
             .summary.flex-grow-1.overflow-hidden
               template(v-if="isNarrow")
                 h1.mb-0
-                  a(href="/") Melb Gig Map
+                  a(href="/") ${SOURCE.heading}
                 .text-muted
                   = "data "
                   ${sourceLinks(18)}

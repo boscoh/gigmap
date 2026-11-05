@@ -45,8 +45,11 @@ module does not read the text of a description.
 The schedule
 
 The event page holds a long text in `div.the-content` and an `Event Starts`
-date. `gig_detail` makes one request for the page and passes the text to
-`extract_schedule`. The feed holds no time, so `time` stays `None`.
+date. `gigs` reads the page of each event, 5 at a time, and passes the text to
+`extract_schedule`. `fit_dates` then checks the chosen dates against the days of
+the event. A gig that is closed on all chosen dates leaves the list. For an open
+gig, `time` is the opening time of the first open date, for example `1:00pm`.
+A gig with no readable page or no schedule stays, with no time.
 
 The tests
 
@@ -66,7 +69,7 @@ from curl_cffi import requests as curl_requests
 
 from gigmap import sources
 from gigmap.logger import log_request
-from gigmap.schedule import extract_schedule
+from gigmap.schedule import extract_schedule, fit_dates
 
 SITE_URL = "https://www.artshub.com.au"
 SITE_HOST = urlsplit(SITE_URL).netloc
@@ -75,7 +78,8 @@ VENUE_PREFIX = f"{SITE_URL}/venue/"
 
 # The app serves this one site, so the source carries the app details.
 SOURCE = sources.SourceInfo(
-    title="Melb Arts Gig Map",
+    title="Melb Art Map",
+    heading="Melb Art Map",
     name="artshub.com.au",
     home_url=f"{SITE_URL}/event/search/?location=melbourne",
 )
@@ -106,6 +110,8 @@ VENUE_ADDRESSES = {
 # this cannot be right, so it stops.
 PAGE_SIZE = 200
 MAX_PAGES = 20
+# The event pages that one gig list reads at the same time.
+PAGE_CONCURRENCY = 5
 
 # The site is behind Cloudflare. The feed and the event page answer a normal
 # request, so one browser fingerprint is enough. A challenge would answer a
@@ -355,33 +361,61 @@ class ArtshubSource:
             return []
         return parse_feed(body, start_date, end_date)
 
+    async def _fit(
+        self,
+        gig: sources.Gig,
+        start_date: str,
+        end_date: str,
+        pool: asyncio.Semaphore,
+    ) -> sources.Gig | None:
+        """Return the gig with its opening time, or None when it is not open.
+
+        The event page holds the days and hours. A gig that has no readable
+        page or no schedule stays in the list, with no time.
+        """
+        if gig.detail_url is None or DETAIL_URL_RE.fullmatch(gig.detail_url) is None:
+            return gig
+        try:
+            async with pool:
+                page = await self._text(gig.detail_url)
+        except sources.SourceError as error:
+            LOGGER.warning("cannot read %s: %s", gig.detail_url, error)
+            return gig
+        body, reference = parse_event_page(page or "")
+        schedule = extract_schedule(body, reference)
+        keep, time = fit_dates(schedule, start_date, end_date)
+        return gig.model_copy(update={"time": time}) if keep else None
+
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs of a date range."""
-        gigs = []
+        """Return the gigs that are open in a date range.
+
+        The feed holds a date range for each event. The page of each event
+        holds its days and hours. A gig leaves the list when none of the
+        chosen dates is one of its days. Its time is its opening time.
+        """
+        feed = []
         for page in range(1, MAX_PAGES + 1):
             items = await self._feed_page(page, start_date, end_date)
-            gigs.extend(items)
+            feed.extend(items)
             if len(items) < PAGE_SIZE:
                 break
-        return gigs
+        # ponytail: the list waits for every page read. The answer is cached
+        # for the date range. Move the filter to the stream if it is slow.
+        pool = asyncio.Semaphore(PAGE_CONCURRENCY)
+        fitted = await asyncio.gather(
+            *(self._fit(gig, start_date, end_date, pool) for gig in feed)
+        )
+        return [gig for gig in fitted if gig is not None]
 
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         """Return the detail of one event.
 
-        The read makes one request for the event page and adds the schedule
-        of its text. The feed holds no time, so `time` stays `None`. A failed
-        read gives None.
+        The time is in the gig list, so the read adds nothing and makes no
+        request.
         """
         if DETAIL_URL_RE.fullmatch(detail_url) is None:
             return None
-        try:
-            page = await self._text(detail_url)
-        except sources.SourceError as error:
-            LOGGER.warning("cannot read %s: %s", detail_url, error)
-            return None
-        body, reference = parse_event_page(page or "")
-        schedule = extract_schedule(body, reference)
-        return sources.GigDetail(detail_url=detail_url, **schedule.model_dump())
+        return sources.GigDetail(detail_url=detail_url)
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

@@ -1,5 +1,14 @@
 # The ArtsHub schedule
 
+> **Status: superseded.** This spec records the first design. It put the
+> schedule in `GigDetail` and showed it in the stream line. The final design
+> filters in `ArtshubSource.gigs` (`gigmap/artshub.py`). `fit_dates` in
+> `gigmap/schedule.py` drops closed gigs and sets `time` to the opening time.
+> `GigDetail`, `gig_detail` and `event_line` are unchanged. `DAYS_VERSION` is
+> `v10`. See "The schedule" in `docs/sources.md`. The sections on the types,
+> the stream line, the steps and the cache below are out of date. The
+> algorithm and the test table of `extract_schedule` are still correct.
+
 ## The purpose
 
 An ArtsHub event page holds a long text. The text states the date range, the

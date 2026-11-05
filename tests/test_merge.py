@@ -103,3 +103,14 @@ def test_the_all_page_lists_the_short_names() -> None:
     assert parts[1].home_url == server.SOURCE_INFO["beat"].home_url
     assert parts[2].home_url == server.SOURCE_INFO["whatson"].home_url
     assert server.SOURCE_INFO["beat"].parts == []
+
+
+def test_the_art_page_merges_artshub_and_whatsonart() -> None:
+    assert server.page_source_name("/art/") == "art"
+    assert server.api_source_name("/api/art/events") == "art"
+    parts = server.SOURCE_INFO["art"].parts
+    assert [part.name for part in parts] == ["artshub", "whatsonart"]
+    assert server.GROUPS["art"] == ("artshub", "whatsonart")
+    for name in ("art", "artshub", "whatsonart"):
+        assert server.SOURCE_INFO[name].heading == "Melb Art Map"
+    assert server.SOURCE_INFO["beat"].heading == "Melb Gig Map"

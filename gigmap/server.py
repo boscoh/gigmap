@@ -26,7 +26,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import artscentre, artshub, beat, fringe, sources, stores, whatson
+from gigmap import artscentre, artshub, beat, fringe, sources, stores, whatson, whatson_art
 from gigmap.logger import log_incoming, log_kv, setup_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -48,11 +48,16 @@ SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "beat": beat.BeatSource,
     "fringe": fringe.FringeSource,
     "whatson": whatson.WhatsonSource,
+    "whatsonart": whatson_art.WhatsonArtSource,
 }
-# The `all` page merges these sources into one map: the three that give
-# a time of day for each gig. artshub and fringe are not members. The
-# page of each of those sources is still at `/artshub/` and `/fringe/`.
-ALL_MEMBERS = ("artscentre", "beat", "whatson")
+# A group page merges its members into one map. `/all/` holds the three
+# sources that give a time of day for each gig. `/art/` holds the two art
+# sources. artshub and fringe are not members of `all`. The page of each
+# member is still at its own path.
+GROUPS: dict[str, tuple[str, ...]] = {
+    "all": ("artscentre", "beat", "whatson"),
+    "art": ("artshub", "whatsonart"),
+}
 ALL_SOURCE_NAME = "all"
 # The root path `/` answers the landing page, and `/all/` answers the
 # map of all sources.
@@ -64,19 +69,27 @@ SOURCE_INFO: dict[str, sources.SourceInfo] = {
         name="all sources",
         home_url="/all/",
     ),
+    "art": sources.SourceInfo(
+        title="Melb Art Map",
+        heading="Melb Art Map",
+        name="art sources",
+        home_url="/art/",
+    ),
     "artscentre": artscentre.SOURCE,
     "artshub": artshub.SOURCE,
     "beat": beat.SOURCE,
     "fringe": fringe.SOURCE,
     "whatson": whatson.SOURCE,
+    "whatsonart": whatson_art.SOURCE,
 }
-# The header of the `all` page links each member by its short name.
-SOURCE_INFO[ALL_SOURCE_NAME].parts = [
-    SOURCE_INFO[name].model_copy(
-        update={"name": "beats" if name == "beat" else name}
-    )
-    for name in ALL_MEMBERS
-]
+# The header of a group page links each member by its short name.
+for _group, _names in GROUPS.items():
+    SOURCE_INFO[_group].parts = [
+        SOURCE_INFO[name].model_copy(
+            update={"name": "beats" if name == "beat" else name}
+        )
+        for name in _names
+    ]
 
 # The document title of the server itself.
 SOURCE = SOURCE_INFO[ROOT_SOURCE_NAME]
@@ -202,11 +215,11 @@ def api_prefix(name: str) -> str:
 async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources.GigSource]]:
     """Give the cached members for the request, then close them.
 
-    The `all` page opens every member of ALL_MEMBERS. Each one keeps its
-    own cache, so the `all` page shares the files of the other pages.
+    A group page (`all`, `art`) opens every member of its group. Each member
+    keeps its own cache, so a group page shares the files of the other pages.
     """
     name = api_source_name(request.url.path)
-    names = list(ALL_MEMBERS) if name == ALL_SOURCE_NAME else [name]
+    names = GROUPS.get(name, (name,))
     async with AsyncExitStack() as stack:
         members: dict[str, sources.GigSource] = {}
         for member in names:
@@ -266,24 +279,25 @@ async def gig_time(
     source: sources.GigSource,
     gig: sources.Gig,
     semaphore: asyncio.Semaphore,
-) -> sources.GigDetail | None:
+) -> str | None:
     # A source can hold the time in the gig list. A read then costs one
     # request and adds nothing, so the time of the list stays.
-    detail_url = gig.detail_url or ""
     if gig.time:
-        return sources.GigDetail(detail_url=detail_url, time=gig.time)
+        return gig.time
+    detail_url = gig.detail_url or ""
     if not detail_url:
         return None
     async with semaphore:
-        return await source.gig_detail(detail_url)
+        data = await source.gig_detail(detail_url)
+    return data.time if data is not None else None
 
 
 async def detail_read(
     source: sources.GigSource,
     gig: sources.Gig,
     semaphore: asyncio.Semaphore,
-) -> sources.GigDetail | None:
-    """Return the detail of one gig, and None when the read fails."""
+) -> str | None:
+    """Return the start time of one gig, and None when the read fails."""
     try:
         return await gig_time(source, gig, semaphore)
     except Exception:
@@ -317,22 +331,14 @@ def venue_failure_text(error: Exception) -> str:
 def event_line(
     index: int,
     gig: sources.Gig,
-    detail: sources.GigDetail | None,
+    time_text: str | None,
     venue: sources.Venue | Exception | None,
 ) -> str:
     """Return the one stream line of a gig, with all of its data."""
     data = gig.model_dump()
-    # The line holds the detail that the read found, so the page needs no
-    # second line for it. A text range replaces the feed range.
-    schedule = (detail or sources.GigDetail(detail_url="")).model_dump()
-    data["time"] = schedule["time"]
-    for field in ("date_start", "date_end", "days", "hours"):
-        data[field] = schedule[field]
-    start, end = schedule["date_start"], schedule["date_end"]
-    if start and start != gig.date:
-        data["date"] = start
-    if end and end != gig.end_date:
-        data["end_date"] = None if end == start else end
+    # The line holds the time that the detail read found, so the page
+    # needs no second line for it.
+    data["time"] = time_text
     line: dict[str, object] = {"index": index, "gig": data, "venue": None}
     if isinstance(venue, Exception):
         line["error"] = venue_failure_text(venue)
@@ -367,11 +373,11 @@ async def event_lines(
             )
 
     async def one(index: int, gig: sources.Gig) -> str:
-        detail = await times[index]
+        time_text = await times[index]
         venue: sources.Venue | Exception | None = None
         if gig.venue_url:
             venue = await venues[gig.venue_url]
-        return event_line(index, gig, detail, venue)
+        return event_line(index, gig, time_text, venue)
 
     tasks = [
         asyncio.create_task(one(index, gig))
