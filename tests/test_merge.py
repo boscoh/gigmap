@@ -1,4 +1,4 @@
-"""Tests for the merge of the member streams on the `all` page."""
+"""Tests for the merge of the member streams on the `gig` page."""
 
 import asyncio
 import json
@@ -93,12 +93,12 @@ def test_the_read_fails_when_every_member_fails() -> None:
 
 
 def test_the_all_page_and_reads_are_served() -> None:
-    assert server.page_source_name("/all/") == "all"
-    assert server.api_source_name("/api/all/events") == "all"
+    assert server.page_source_name("/gig/") == "gig"
+    assert server.api_source_name("/api/gig/events") == "gig"
 
 
 def test_the_all_page_lists_the_short_names() -> None:
-    parts = server.SOURCE_INFO["all"].parts
+    parts = server.SOURCE_INFO["gig"].parts
     assert [part.name for part in parts] == ["artscentre", "beats", "whatson"]
     assert parts[1].home_url == server.SOURCE_INFO["beat"].home_url
     assert parts[2].home_url == server.SOURCE_INFO["whatson"].home_url

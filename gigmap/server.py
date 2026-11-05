@@ -41,7 +41,7 @@ SOURCE_API_BASE_TOKEN = "__API_BASE__"
 # One server answers every site. Each source has a page prefix of its own
 # name, so `/fringe` is the Fringe page and `/beat` is the beat page. The
 # reads of every source sit at `/api/<source>`. The root path `/` answers
-# the landing page, and `/all/` answers the map of all sources.
+# the landing page, and `/gig/` answers the map of the gig sources.
 SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "artscentre": artscentre.ArtsCentreSource,
     "artshub": artshub.ArtshubSource,
@@ -50,24 +50,24 @@ SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "whatson": whatson.WhatsonSource,
     "whatsonart": whatson_art.WhatsonArtSource,
 }
-# A group page merges its members into one map. `/all/` holds the three
+# A group page merges its members into one map. `/gig/` holds the three
 # sources that give a time of day for each gig. `/art/` holds the two art
-# sources. artshub and fringe are not members of `all`. The page of each
+# sources. artshub and fringe are not members of `gig`. The page of each
 # member is still at its own path.
 GROUPS: dict[str, tuple[str, ...]] = {
-    "all": ("artscentre", "beat", "whatson"),
+    "gig": ("artscentre", "beat", "whatson"),
     "art": ("artshub", "whatsonart"),
 }
-ALL_SOURCE_NAME = "all"
-# The root path `/` answers the landing page, and `/all/` answers the
-# map of all sources.
-ROOT_SOURCE_NAME = ALL_SOURCE_NAME
+GIG_SOURCE_NAME = "gig"
+# The root path `/` answers the landing page, and `/gig/` answers the
+# map of the gig sources.
+ROOT_SOURCE_NAME = GIG_SOURCE_NAME
 LANDING_FILE = ROOT_DIR / "index.html"
 SOURCE_INFO: dict[str, sources.SourceInfo] = {
-    "all": sources.SourceInfo(
-        title="Melb All Gig Map",
-        name="all sources",
-        home_url="/all/",
+    "gig": sources.SourceInfo(
+        title="Melb Gig Map",
+        name="gig sources",
+        home_url="/gig/",
     ),
     "art": sources.SourceInfo(
         title="Melb Art Map",
@@ -184,8 +184,8 @@ def page_source_name(path: str) -> str:
     """Return the name of the source of one page path.
 
     The app serves each page at the path of its source, so `/fringe/`
-    answers from the Fringe source. `/all/` answers from the `all`
-    source, which is the map of every source. The root path `/` is the
+    answers from the Fringe source. `/gig/` answers from the `gig`
+    source, which is the map of the gig sources. The root path `/` is the
     landing page, and it is not a source page.
     """
     name = first_segment(path)
@@ -215,7 +215,7 @@ def api_prefix(name: str) -> str:
 async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources.GigSource]]:
     """Give the cached members for the request, then close them.
 
-    A group page (`all`, `art`) opens every member of its group. Each member
+    A group page (`gig`, `art`) opens every member of its group. Each member
     keeps its own cache, so a group page shares the files of the other pages.
     """
     name = api_source_name(request.url.path)
@@ -475,7 +475,7 @@ def mount_sources(
 ) -> None:
     """Serve the page and the reads of each source.
 
-    `/` answers the landing page, `/all/` answers the map of all
+    `/` answers the landing page, `/gig/` answers the map of the gig
     sources, and `/beat/` answers the beat page. The reads of a source
     sit at `/api/<source>/`, so the Fringe reads are at
     `/api/fringe/events`.

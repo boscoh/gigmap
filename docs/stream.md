@@ -130,7 +130,7 @@ lock, so a warm day has no serialization at all.
 ## The merge of sources
 
 `/api/<source>/events` always merges a set of members. A page of one source has
-one member. A group has its members in `GROUPS`: `/api/all/events` has
+one member. A group has its members in `GROUPS`: `/api/gig/events` has
 artscentre, beat and whatson, and `/api/art/events` has artshub and whatsonart.
 
 - `event_stream` starts one `gigs` read for each member, and waits for the

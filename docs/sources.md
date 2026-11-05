@@ -318,4 +318,4 @@ alt text.
 
 Same site and same parse as What's On (`gigmap/whatson_art.py` only changes
 the filter). The subcategories are `art` and `exhibition`, under
-`c=things_to_do`. The page is `/whatsonart/`. It is not a member of `all`.
+`c=things_to_do`. The page is `/whatsonart/`. It is not a member of `gig`.
