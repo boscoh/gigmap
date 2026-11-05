@@ -751,11 +751,11 @@
                         | {{ gig.venue }}
                       span.venue-icons
                         a.ms-2(
-                          v-if="gig.venue_url",
-                          :href="gig.venue_url",
+                          v-if="gig.venue",
+                          :href="venueUrl(gig)",
                           target="_blank",
                           rel="noopener",
-                          title="Open the venue page on beat.com.au"
+                          title="Open the venue"
                         )
                           i.fas.fa-link.text-muted
                   td
@@ -892,6 +892,15 @@
     function searchUrl(gig) {
         const query = [gig.artist, ...(gig.categories || []), ...(gig.genres || [])].filter(Boolean).join(" ");
         return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    }
+
+    // Only beat keeps a page for the venue, so every other source searches
+    // Google for the name of the venue.
+    function venueUrl(gig) {
+        if ((gig.venue_url || "").includes("beat.com.au")) {
+            return gig.venue_url;
+        }
+        return `https://www.google.com/search?q=${encodeURIComponent(gig.venue || "")}`;
     }
 
     // Yield one NDJSON line at a time from a streaming response.
@@ -1648,6 +1657,7 @@
             ticketTextClass,
             ticketTitle,
             searchUrl,
+            venueUrl,
             sortKey,
             sortDir,
             toggleSort,
