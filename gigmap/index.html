@@ -182,16 +182,7 @@
           padding-top: 1rem;
       }
 
-      .summary div {
-          overflow: hidden;
-          white-space: nowrap;
-      }
 
-      .venue-group .venue-name,
-      .venue-group .venue-address {
-          overflow: visible;
-          white-space: normal;
-      }
 
       /* The narrow layout puts the venue between the map and the table, so
          the venue stays beside the rows that it belongs to. The text is at
@@ -570,7 +561,7 @@
                 title="Open the gigmap source on GitHub"
             ) github
           .d-flex.gap-3.mt-3.align-items-start
-            .summary.flex-grow-1.overflow-hidden
+            .summary.flex-grow-1
               template(v-if="isNarrow")
                 h1.mb-0
                   a(href="/") ${SOURCE.heading}
@@ -584,7 +575,7 @@
                       rel="noopener",
                       title="Open the gigmap source on GitHub"
                   ) github
-              .d-flex.flex-nowrap.gap-2(v-if="!isNarrow")
+              .d-flex.flex-wrap.gap-2(v-if="!isNarrow")
                 button.calendar-day(
                   v-for="range in ranges",
                   :key="range.id",
