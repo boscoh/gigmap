@@ -213,3 +213,33 @@ def test_a_gig_with_no_readable_page_stays_with_no_time() -> None:
 def test_a_gig_with_no_schedule_stays_with_no_time() -> None:
     page = "<div class='the-content'>A night of music.</div>"
     assert [g.time for g in gigs_on("2026-11-02", "2026-11-02", page)] == [None]
+
+
+def expand(page: str | None, start: str = "2026-11-02") -> list[sources.Gig]:
+    """Return `expand` of one fake gig, with the event page faked."""
+
+    async def run() -> list[sources.Gig]:
+        source = artshub.ArtshubSource()
+
+        async def text(*_a: object, **_k: object) -> str:
+            if page is None:
+                raise sources.SourceError("down")
+            return page
+
+        source._text = text  # type: ignore[method-assign]
+        gig = sources.Gig(artist="X", detail_url=GIG_URL)
+        return await source.expand(gig, start, start)
+
+    return asyncio.run(run())
+
+
+def test_expand_gives_nothing_for_a_closed_exhibit() -> None:
+    assert expand(PAGE, "2026-11-02") == []  # Monday
+
+
+def test_expand_keeps_the_gig_when_the_page_read_fails() -> None:
+    assert [g.time for g in expand(None)] == [None]
+
+
+def test_expand_sets_the_time_from_the_schedule() -> None:
+    assert [g.time for g in expand(PAGE, "2026-11-05")] == ["10:00am"]

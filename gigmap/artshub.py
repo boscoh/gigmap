@@ -279,6 +279,7 @@ class ArtshubSource:
 
     def __init__(self) -> None:
         self._session: curl_requests.AsyncSession | None = None
+        self._pool = asyncio.Semaphore(PAGE_CONCURRENCY)
 
     async def __aenter__(self) -> "ArtshubSource":
         self._session = curl_requests.AsyncSession(
@@ -371,30 +372,39 @@ class ArtshubSource:
             return []
         return parse_feed(body, start_date, end_date)
 
-    async def _fit(
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        """Return the feed gigs of the range, with no event page read."""
+        feed = []
+        for page in range(1, MAX_PAGES + 1):
+            items = await self._feed_page(page, start_date, end_date)
+            feed.extend(items)
+            if len(items) < PAGE_SIZE:
+                break
+        return feed
+
+    async def expand(
         self,
         gig: sources.Gig,
         start_date: str,
         end_date: str,
-        pool: asyncio.Semaphore,
-    ) -> sources.Gig | None:
-        """Return the gig with its opening time, or None when it is not open.
+    ) -> list[sources.Gig]:
+        """Return the gig with its opening time, or [] when it is not open.
 
         The event page holds the days and hours. A gig that has no readable
         page or no schedule stays in the list, with no time.
         """
         if gig.detail_url is None or DETAIL_URL_RE.fullmatch(gig.detail_url) is None:
-            return gig
+            return [gig]
         try:
-            async with pool:
+            async with self._pool:
                 page = await self._text(gig.detail_url)
         except sources.SourceError as error:
             LOGGER.warning("cannot read %s: %s", gig.detail_url, error)
-            return gig
+            return [gig]
         body, reference = parse_event_page(page or "")
         schedule = extract_schedule(body, reference)
         keep, time = fit_dates(schedule, start_date, end_date)
-        return gig.model_copy(update={"time": time}) if keep else None
+        return [gig.model_copy(update={"time": time})] if keep else []
 
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the gigs that are open in a date range.
@@ -403,19 +413,11 @@ class ArtshubSource:
         holds its days and hours. A gig leaves the list when none of the
         chosen dates is one of its days. Its time is its opening time.
         """
-        feed = []
-        for page in range(1, MAX_PAGES + 1):
-            items = await self._feed_page(page, start_date, end_date)
-            feed.extend(items)
-            if len(items) < PAGE_SIZE:
-                break
-        # ponytail: the list waits for every page read. The answer is cached
-        # for the date range. Move the filter to the stream if it is slow.
-        pool = asyncio.Semaphore(PAGE_CONCURRENCY)
-        fitted = await asyncio.gather(
-            *(self._fit(gig, start_date, end_date, pool) for gig in feed)
+        feed = await self.candidates(start_date, end_date)
+        expanded = await asyncio.gather(
+            *(self.expand(gig, start_date, end_date) for gig in feed)
         )
-        return [gig for gig in fitted if gig is not None]
+        return [gig for gigs in expanded for gig in gigs]
 
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         """Return the detail of one event.
