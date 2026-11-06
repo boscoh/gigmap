@@ -1,6 +1,6 @@
 # The total first, then each event as it arrives
 
-**Status:** Done. All three waves landed.
+**Status:** Landed, with D8 open: one read queue per source.
 
 **Owner:** boscoh
 
@@ -15,15 +15,16 @@
 
 ## Decisions
 
-| Id  | Decision                                                          | Reason                            |
-| --- | ----------------------------------------------------------------- | --------------------------------- |
-| D1  | First total = candidate count. Corrections follow. **Confirmed.** | Known before any per-event read   |
-| D2  | A correction is a `{"total": d}` line. `d` can be negative.       | The page adds every `total` line  |
-| D3  | New `candidates` and `expand`. No `expand` means identity.        | Four sources need no new code     |
-| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**        | A warm page reads no event page   |
-| D5  | Keep the 502. Wait for a candidate list or a warm day file.       | The headers leave before line one |
-| D6  | Per-member `total` lines. The page adds them into one total.      | No page change                    |
-| D7  | A gig line still waits for its own venue read.                    | The rule of `docs/stream.md`      |
+| Id  | Decision                                                          | Reason                              |
+| --- | ----------------------------------------------------------------- | ----------------------------------- |
+| D1  | First total = candidate count. Corrections follow. **Confirmed.** | Known before any per-event read     |
+| D2  | A correction is a `{"total": d}` line. `d` can be negative.       | The page adds every `total` line    |
+| D3  | New `candidates` and `expand`. No `expand` means identity.        | Four sources need no new code       |
+| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**        | A warm page reads no event page     |
+| D5  | Keep the 502. Wait for a candidate list or a warm day file.       | The headers leave before line one   |
+| D6  | Per-member `total` lines. The page adds them into one total.      | No page change                      |
+| D7  | A gig line still waits for its own venue read.                    | The rule of `docs/stream.md`        |
+| D8  | One read queue per source, as `geocode`. **Open work.**           | The owner wants no spam at a source |
 
 Rejected options for the total:
 
@@ -158,13 +159,14 @@ Rejected options for the total:
 - A cold artshub page shows rows at the pace of the event pages, not after all of them.
 - Two cold requests for one range both run `expand`. Today both run `gigs`, so the cost is equal.
 
-| Question                                                                       | Assumed default                            | Owner  |
-| ------------------------------------------------------------------------------ | ------------------------------------------ | ------ |
-| Q1: does "immediately" include the venue read?                                 | yes (D7). Confirmed                        | boscoh |
-| Q2: stream fringe per day, with a per-day total?                               | no. Not per event. Confirmed               | boscoh |
-| Q3: is a total that moves up and down clear to a reader?                       | yes. It ends exact. confirmed              | boscoh |
-| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Grow `docs/stream.md` into it         | boscoh |
-| Q5: does the stream fetch the events in order, or at the same time?            | at the same time. Each pool caps the reads | boscoh |
+| Question                                                                         | Assumed default                                    | Owner  |
+| -------------------------------------------------------------------------------- | -------------------------------------------------- | ------ |
+| Q1: does "immediately" include the venue read?                                   | yes (D7). Confirmed                                | boscoh |
+| Q2: stream fringe per day, with a per-day total?                                 | no. Not per event. Confirmed                       | boscoh |
+| Q3: is a total that moves up and down clear to a reader?                         | yes. It ends exact. confirmed                      | boscoh |
+| Q4: describe the streaming, reading and updating strategy in one readable doc?   | yes. Grow `docs/stream.md` into it                 | boscoh |
+| Q5: does the stream fetch the events in order, or at the same time?              | in order, one at a time per source (D8). Confirmed | boscoh |
+| Q6: what shape has the read queue of D8? One worker, or a small pool with a gap? | one worker with a gap, as `geocode`                | boscoh |
 
 Assumption: the whatson search gives each event card once. `_candidates` dedupes by url.
 
