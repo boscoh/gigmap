@@ -28,7 +28,7 @@ function, so a test needs no network.
 
 | Topic | Decision |
 |---|---|
-| Method | Regular expressions and the standard library. No new dependency. This departs from `docs/text-extraction-research.md`: both libraries fail the rule "add a dependency only if the simple method fails", and neither knows a one-off session. |
+| Method | Regular expressions and the standard library. No new dependency. This departs from `docs/schedule-text.md`: both libraries fail the rule "add a dependency only if the simple method fails", and neither knows a one-off session. |
 | Text source | `gig_detail()` fetches the event page (one read for each event; cached 30 days). |
 | Date range | Text range replaces `Gig.date` and `Gig.end_date` in the stream line when the two differ. This is display only. The day file and the feed date filter do not change. |
 | Fields | `GigDetail` gets `date_start`, `date_end`, `days`, `hours`. `Gig` does not change. |

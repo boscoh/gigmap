@@ -130,7 +130,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
 - **Done when:**
   - `uv run python -c "from gigmap.sources import Hours, Schedule, GigDetail; assert GigDetail(detail_url='x').hours == []"` exits 0.
   - `uv run pytest tests/ -q` passes.
-- **Prompt:** "Do Step 1 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 1 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ### Step 2: The extract function
 
@@ -145,7 +145,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
   - `uv run pytest tests/test_schedule.py -q` shows 22 passed.
   - `uv run pytest tests/ -q` passes.
   - `rg "^(import|from)" gigmap/schedule.py` shows only standard library modules and `gigmap.sources` (or `.sources`).
-- **Prompt:** "Do Step 2 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 2 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ### Step 3: The ArtsHub page read
 
@@ -160,7 +160,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
 - **Done when:**
   - `uv run pytest tests/test_artshub.py -q` passes.
   - `uv run pytest tests/ -q` passes.
-- **Prompt:** "Do Step 3 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 3 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ### Step 4: The stream line
 
@@ -176,7 +176,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
   - `uv run pytest tests/test_source.py -q` passes.
   - `uv run pytest tests/ -q` passes.
   - `rg "time_text" gigmap/server.py` shows no match.
-- **Prompt:** "Do Step 4 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 4 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ### Step 5: The docs
 
@@ -189,7 +189,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
 - **Done when:**
   - `rg "artshub_\*.json" docs/sources.md` shows one match.
   - `uv run pytest tests/ -q` passes.
-- **Prompt:** "Do Step 5 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 5 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ### Step 6: The final check
 
@@ -204,7 +204,7 @@ Run all checks from `/Users/boscoh/p/gigmap`. The test command is
   - The test run passes.
   - `pyproject.toml` and `gigmap/stores.py` show no diff, and `class Gig` shows no diff.
   - The live line holds the four new fields.
-- **Prompt:** "Do Step 6 of docs/spec-artshub-schedule.md"
+- **Prompt:** "Do Step 6 of docs/specs/2026-11-05-artshub-schedule.md"
 
 ## The parallel plan
 
