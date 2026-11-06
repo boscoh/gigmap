@@ -15,16 +15,16 @@
 
 ## Decisions
 
-| Id  | Decision                                                          | Reason                              |
-| --- | ----------------------------------------------------------------- | ----------------------------------- |
-| D1  | First total = candidate count. Corrections follow. **Confirmed.** | Known before any per-event read     |
-| D2  | A correction is a `{"total": d}` line. `d` can be negative.       | The page adds every `total` line    |
-| D3  | New `candidates` and `expand`. No `expand` means identity.        | Four sources need no new code       |
-| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**        | A warm page reads no event page     |
-| D5  | Keep the 502. Wait for a candidate list or a warm day file.       | The headers leave before line one   |
-| D6  | Per-member `total` lines. The page adds them into one total.      | No page change                      |
-| D7  | A gig line still waits for its own venue read.                    | The rule of `docs/stream.md`        |
-| D8  | One shared read pool per origin, process-wide. **Open work.**     | The owner wants no spam at a source |
+| Id  | Decision                                                                 | Reason                              |
+| --- | ------------------------------------------------------------------------ | ----------------------------------- |
+| D1  | First total = candidate count. Corrections follow. **Confirmed.**        | Known before any per-event read     |
+| D2  | A correction is a `{"total": d}` line. `d` can be negative.              | The page adds every `total` line    |
+| D3  | New `candidates` and `expand`. No `expand` means identity.               | Four sources need no new code       |
+| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**               | A warm page reads no event page     |
+| D5  | Keep the 502. Wait for a candidate list or a warm day file.              | The headers leave before line one   |
+| D6  | Per-member `total` lines. The page adds them into one total.             | No page change                      |
+| D7  | A gig line still waits for its own venue read.                           | The rule of `docs/stream.md`        |
+| D8  | One shared read pool per origin, process-wide. **Confirmed. Open work.** | The owner wants no spam at a source |
 
 Rejected options for the total:
 
@@ -173,7 +173,7 @@ Rejected options for the total:
 | Q1: does "immediately" include the venue read?                                 | yes (D7). Confirmed                                         | boscoh |
 | Q2: stream fringe per day, with a per-day total?                               | no. Not per event. Confirmed                                | boscoh |
 | Q3: is a total that moves up and down clear to a reader?                       | yes. It ends exact. confirmed                               | boscoh |
-| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Grow `docs/stream.md` into it                          | boscoh |
+| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Done in wave 2. Confirmed                              | boscoh |
 | Q5: does the stream fetch the events in order, or at the same time?            | at the same time, capped by the shared pool (D8). Confirmed | boscoh |
 
 Assumption: the whatson search gives each event card once. `_candidates` dedupes by url.
