@@ -244,7 +244,14 @@ def setup_logging(level: int | str = logging.INFO) -> None:
         # block starts near the left edge.
         console=Console(
             stderr=True,
-            theme=Theme({"log.time": Style(color=KEY_STYLE, dim=True)}),
+            theme=Theme(
+                {
+                    "log.time": Style(color=KEY_STYLE, dim=True),
+                    # ANSI yellow is dull in many themes, so a warning gets a
+                    # bright orange, with the same weight as the error level.
+                    "logging.level.warning": Style(color="color(214)", bold=True),
+                }
+            ),
         ),
         log_time_format="%H:%M",
         # The time always shows, because a minute covers many lines.
