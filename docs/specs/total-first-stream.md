@@ -1,6 +1,6 @@
 # The total first, then each event as it arrives
 
-**Status:** Landed, with D8 open: one read queue per source.
+**Status:** Landed, with D8 open: one shared read pool per origin.
 
 **Owner:** boscoh
 
@@ -24,7 +24,7 @@
 | D5  | Keep the 502. Wait for a candidate list or a warm day file.       | The headers leave before line one   |
 | D6  | Per-member `total` lines. The page adds them into one total.      | No page change                      |
 | D7  | A gig line still waits for its own venue read.                    | The rule of `docs/stream.md`        |
-| D8  | One read queue per source, as `geocode`. **Open work.**           | The owner wants no spam at a source |
+| D8  | One shared read pool per origin, process-wide. **Open work.**     | The owner wants no spam at a source |
 
 Rejected options for the total:
 
@@ -32,6 +32,7 @@ Rejected options for the total:
 - Candidate count, no correction: whatson shows `50 / 20`. Artshub never reaches its total.
 - Count events, not gigs: the page counts rows, and `SourceInfo.noun` names rows.
 - An `X-Gig-Total` header: a group has no total before the first list.
+- One worker with a gap, the `geocode` shape: a 48-exhibit page needs about 53 seconds.
 
 ## Scope
 
@@ -80,11 +81,16 @@ Rejected options for the total:
 
 - `candidates(start_date, end_date) -> list[Gig]`: the reads before any per-event read.
 - `expand(gig, start_date, end_date) -> list[Gig]`: one event read. It gives zero, one or many gigs.
-- `expand` owns its pool: artshub `PAGE_CONCURRENCY` (5), whatson `DETAIL_CONCURRENCY` (3).
+- `expand` uses the pool of its module: artshub `PAGE_CONCURRENCY` (5), whatson `DETAIL_CONCURRENCY` (3). Every request shares it (D8).
 - All `expand` reads run at the same time, and the pool queue keeps the candidate order.
 - On a `SourceError`, `expand` logs it. artshub keeps the gig. whatson gives `[]`.
 - `gigs` stays, as `candidates` plus a `gather` of `expand`.
 - No `expand`: `candidates` is `gigs`, and `expand` gives `[gig]`. The server uses `getattr`.
+
+### The origin limits
+
+- Every origin has one pool at module scope. Every request of the app shares it (D8).
+- The sizes stay: artshub `PAGE_CONCURRENCY` (5), whatson `DETAIL_CONCURRENCY` (3), fringe `REQUEST_CONCURRENCY` (8), the server detail pool 5 and venue pool 5.
 
 ### The total
 
@@ -128,17 +134,19 @@ Rejected options for the total:
 
 ## Changes
 
-| Area                | Change                                                               |
-| ------------------- | -------------------------------------------------------------------- |
-| `gigmap/sources.py` | add `ExpandingSource` with `candidates` and `expand`. Done in wave 1 |
-| `gigmap/stores.py`  | `CachedSource`: `cached_gigs`, `candidates`, `expand`, `save_gigs`   |
-| `gigmap/server.py`  | `pump`: the warm and cold paths, the correction lines                |
-| `gigmap/server.py`  | `event_lines`: take an async source of gigs                          |
-| `gigmap/server.py`  | `wait_for_a_list`: wait for a warm file or a candidate list          |
-| `gigmap/artshub.py` | `_fit` to `expand`. Remove the `ponytail:` comment                   |
-| `gigmap/whatson.py` | `_candidates` to `candidates`, `_event_gigs` to `expand`             |
-| `gigmap/index.html` | fix the stale `total` comment. No logic change                       |
-| `docs/stream.md`    | the total rule, the correction line, `DAYS_VERSION`                  |
+| Area                                                         | Change                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `gigmap/sources.py`                                          | add `ExpandingSource` with `candidates` and `expand`. Done in wave 1 |
+| `gigmap/stores.py`                                           | `CachedSource`: `cached_gigs`, `candidates`, `expand`, `save_gigs`   |
+| `gigmap/server.py`                                           | `pump`: the warm and cold paths, the correction lines                |
+| `gigmap/server.py`                                           | `event_lines`: take an async source of gigs                          |
+| `gigmap/server.py`                                           | `wait_for_a_list`: wait for a warm file or a candidate list          |
+| `gigmap/artshub.py`                                          | `_fit` to `expand`. Remove the `ponytail:` comment                   |
+| `gigmap/whatson.py`                                          | `_candidates` to `candidates`, `_event_gigs` to `expand`             |
+| `gigmap/index.html`                                          | fix the stale `total` comment. No logic change                       |
+| `docs/stream.md`                                             | the total rule, the correction line, `DAYS_VERSION`                  |
+| `gigmap/artshub.py`, `gigmap/whatson.py`, `gigmap/fringe.py` | move the origin pools to module scope (D8)                           |
+| `gigmap/server.py`                                           | move the detail and venue pools to module scope (D8)                 |
 
 ## Tests
 
@@ -152,6 +160,7 @@ Rejected options for the total:
 | the cache    | a cancelled stream saves no day file                                 |
 | the failures | all candidate reads fail: 502. One fails: the other member streams   |
 | the identity | beat, artscentre and fringe stream as today                          |
+| the pools    | two streams share one pool. The reads of one wait for the other (D8) |
 | keep         | `tests/test_source.py` and `tests/test_merge.py` still pass          |
 
 ## Safety and open questions
@@ -159,14 +168,13 @@ Rejected options for the total:
 - A cold artshub page shows rows at the pace of the event pages, not after all of them.
 - Two cold requests for one range both run `expand`. Today both run `gigs`, so the cost is equal.
 
-| Question                                                                         | Assumed default                                    | Owner  |
-| -------------------------------------------------------------------------------- | -------------------------------------------------- | ------ |
-| Q1: does "immediately" include the venue read?                                   | yes (D7). Confirmed                                | boscoh |
-| Q2: stream fringe per day, with a per-day total?                                 | no. Not per event. Confirmed                       | boscoh |
-| Q3: is a total that moves up and down clear to a reader?                         | yes. It ends exact. confirmed                      | boscoh |
-| Q4: describe the streaming, reading and updating strategy in one readable doc?   | yes. Grow `docs/stream.md` into it                 | boscoh |
-| Q5: does the stream fetch the events in order, or at the same time?              | in order, one at a time per source (D8). Confirmed | boscoh |
-| Q6: what shape has the read queue of D8? One worker, or a small pool with a gap? | one worker with a gap, as `geocode`                | boscoh |
+| Question                                                                       | Assumed default                                             | Owner  |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------ |
+| Q1: does "immediately" include the venue read?                                 | yes (D7). Confirmed                                         | boscoh |
+| Q2: stream fringe per day, with a per-day total?                               | no. Not per event. Confirmed                                | boscoh |
+| Q3: is a total that moves up and down clear to a reader?                       | yes. It ends exact. confirmed                               | boscoh |
+| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Grow `docs/stream.md` into it                          | boscoh |
+| Q5: does the stream fetch the events in order, or at the same time?            | at the same time, capped by the shared pool (D8). Confirmed | boscoh |
 
 Assumption: the whatson search gives each event card once. `_candidates` dedupes by url.
 
@@ -196,3 +204,7 @@ The work of a task is its rows of the Changes table. The task owns every file in
 **Wave 3 — one agent, after wave 2.**
 
 Run the full suite. Check that every row of the tests table has a test.
+
+**Wave 4 — one agent, the shared pools (D8).**
+
+Move the origin pools to module scope in `artshub`, `whatson` and `fringe`. Move the server detail and venue pools to module scope. Add the shared-pool test. The suite stays green.
