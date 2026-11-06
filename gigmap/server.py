@@ -352,49 +352,57 @@ def event_line(
 
 async def event_lines(
     source: sources.GigSource,
-    gigs: list[sources.Gig],
+    gigs: AsyncIterator[sources.Gig],
 ) -> AsyncIterator[str]:
     """Yield one line for each gig, as its time and venue arrive.
 
-    Every read starts before the first line leaves. A gig waits for its
+    The reads of a gig start when the gig arrives. A gig waits for its
     own two reads only, so a slow venue holds no other gig's line.
     """
     detail_pool = asyncio.Semaphore(DETAIL_CONCURRENCY)
     venue_pool = asyncio.Semaphore(VENUE_CONCURRENCY)
-    # One detail read for each gig, so a time in the list costs no read.
-    times = {
-        index: asyncio.create_task(detail_read(source, gig, detail_pool))
-        for index, gig in enumerate(gigs)
-    }
     # One venue read for each url, so a venue of many gigs costs one read.
     venues: dict[str, asyncio.Task[sources.Venue | Exception]] = {}
-    for gig in gigs:
-        url = gig.venue_url
-        if url and url not in venues:
-            venues[url] = asyncio.create_task(
-                venue_read(source, url, venue_pool)
-            )
+    tasks: list[asyncio.Task] = []
+    # Each item is a finished gig, an error of the gig stream, or None at the end.
+    done: asyncio.Queue = asyncio.Queue()
 
-    async def one(index: int, gig: sources.Gig) -> str:
-        time_text = await times[index]
+    async def one(gig: sources.Gig) -> None:
+        time_text = await detail_read(source, gig, detail_pool)
         venue: sources.Venue | Exception | None = None
         if gig.venue_url:
             venue = await venues[gig.venue_url]
-        return event_line(index, gig, time_text, venue)
+        await done.put((gig, time_text, venue))
 
-    tasks = [
-        asyncio.create_task(one(index, gig))
-        for index, gig in enumerate(gigs)
-    ]
-    reads = [*times.values(), *venues.values()]
+    async def feed() -> None:
+        try:
+            async for gig in gigs:
+                url = gig.venue_url
+                if url and url not in venues:
+                    venues[url] = asyncio.create_task(
+                        venue_read(source, url, venue_pool)
+                    )
+                tasks.append(asyncio.create_task(one(gig)))
+            await asyncio.gather(*tasks)
+        except Exception as error:
+            await done.put(error)
+        else:
+            await done.put(None)
+
+    feeder = asyncio.create_task(feed())
+    count = 0
     try:
-        for done in asyncio.as_completed(tasks):
-            yield await done
+        while (item := await done.get()) is not None:
+            if isinstance(item, Exception):
+                raise item
+            yield event_line(count, *item)
+            count += 1
     finally:
         # A client disconnect cancels every read.
-        for task in [*tasks, *reads]:
+        reads = [feeder, *tasks, *venues.values()]
+        for task in reads:
             task.cancel()
-        await asyncio.gather(*tasks, *reads, return_exceptions=True)
+        await asyncio.gather(*reads, return_exceptions=True)
 
 
 def candidates_of(member: sources.GigSource):
@@ -411,11 +419,24 @@ def expand_of(member: sources.GigSource):
     return getattr(member, "expand", identity)
 
 
-async def wait_for_a_list(lists: dict[str, asyncio.Task[list[sources.Gig]]]) -> None:
-    """Return when one member has its gig list. Raise when every member fails.
+async def read_list(
+    member: sources.GigSource, start_date: str, end_date: str
+) -> tuple[list[sources.Gig], bool]:
+    """Return the warm day file and True, or the candidates and False."""
+    cached = getattr(member, "cached_gigs", None)
+    if cached is not None and (hit := cached(start_date, end_date)) is not None:
+        return hit, True
+    return await candidates_of(member)(start_date, end_date), False
 
-    The route needs one list before it sends the headers, so a total
-    failure still answers 502. A later failure is a log line only.
+
+async def wait_for_a_list(
+    lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
+) -> None:
+    """Return when one member has a warm day file or a candidate list.
+
+    Raise when every member fails. The route needs one list before it sends
+    the headers, so a total failure still answers 502. A later failure is a
+    log line only.
     """
     pending = set(lists.values())
     while pending:
@@ -434,24 +455,73 @@ async def wait_for_a_list(lists: dict[str, asyncio.Task[list[sources.Gig]]]) -> 
 
 async def merged_lines(
     members: dict[str, sources.GigSource],
-    lists: dict[str, asyncio.Task[list[sources.Gig]]],
+    lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
+    start_date: str,
+    end_date: str,
 ) -> AsyncIterator[str]:
     """Yield the lines of every member, as each line arrives.
 
     Each member has its own list read and its own pools, so a slow member
     holds no line of a fast member. A member that fails is logged and left
-    out. The first line of a member is its total, `{"total": n}`.
+    out. A member sends `{"total": n}` before its first event read, then a
+    correction `{"total": d}` after each `expand` that does not give one gig.
     """
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def pump(name: str, member: sources.GigSource) -> None:
+        running = 0  # the sum of the total lines of this member
+        sent = 0  # the gig lines of this member
+
+        async def send_total(n: int) -> None:
+            nonlocal running
+            running += n
+            await queue.put(json.dumps({"total": n}) + "\n")
+
         try:
-            gigs = await lists[name]
-            await queue.put(json.dumps({"total": len(gigs)}) + "\n")
-            async for line in event_lines(member, gigs):
+            gigs, warm = await lists[name]
+            await send_total(len(gigs))
+            expanded: list[list[sources.Gig]] = [[] for _ in gigs]
+            clean = True
+
+            async def stream() -> AsyncIterator[sources.Gig]:
+                nonlocal clean
+                if warm:
+                    for gig in gigs:
+                        yield gig
+                    return
+                expand = expand_of(member)
+
+                async def read(i: int, gig: sources.Gig) -> int:
+                    nonlocal clean
+                    try:
+                        expanded[i] = await expand(gig, start_date, end_date)
+                    except Exception as error:
+                        log_kv(LOGGER.warning, "expand failed", source=name, error=error)
+                        clean = False
+                    return i
+
+                reads = [asyncio.create_task(read(i, g)) for i, g in enumerate(gigs)]
+                try:
+                    for finished in asyncio.as_completed(reads):
+                        part = expanded[await finished]
+                        if len(part) != 1:
+                            await send_total(len(part) - 1)
+                        for gig in part:
+                            yield gig
+                finally:
+                    for task in reads:
+                        task.cancel()
+
+            async for line in event_lines(member, stream()):
+                sent += 1
                 await queue.put(line)
+            save = getattr(member, "save_gigs", None)
+            if not warm and clean and save is not None:
+                save(start_date, end_date, [g for part in expanded for g in part])
         except Exception as error:
             log_kv(LOGGER.warning, "source failed", source=name, error=error)
+            if running != sent:
+                await queue.put(json.dumps({"total": sent - running}) + "\n")
         finally:
             await queue.put(None)
 
@@ -476,12 +546,12 @@ async def event_stream(
     """Stream one line for each gig, when its time and venue are known."""
     validate_dates(start_date, end_date)
     lists = {
-        name: asyncio.create_task(member.gigs(start_date, end_date))
+        name: asyncio.create_task(read_list(member, start_date, end_date))
         for name, member in members.items()
     }
     await wait_for_a_list(lists)
     return StreamingResponse(
-        merged_lines(members, lists),
+        merged_lines(members, lists, start_date, end_date),
         media_type="application/x-ndjson",
         headers=STREAM_HEADERS,
     )

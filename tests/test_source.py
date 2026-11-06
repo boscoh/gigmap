@@ -498,7 +498,7 @@ def test_a_blocked_venue_holds_no_other_line(
 
     lines = asyncio.run(run())
 
-    assert [line["index"] for line in lines] == [1, 0]
+    assert [line["index"] for line in lines] == [0, 1]
     assert lines[0]["gig"]["venue_url"] == SECOND_VENUE_URL
     assert lines[0]["venue"]["venue_url"] == SECOND_VENUE_URL
 

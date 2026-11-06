@@ -122,3 +122,104 @@ def test_the_art_page_counts_exhibits() -> None:
 
     for name in ("gigs", "artscentre", "beat", "fringe", "whatson"):
         assert server.SOURCE_INFO[name].noun == "gigs"
+
+
+class Expander(Member):
+    """A member with `candidates` and `expand`. Each event gives `sessions[url]` gigs."""
+
+    def __init__(self, host: str, sessions: dict[str, int]) -> None:
+        super().__init__(host)
+        self.sessions = sessions
+        self.expanded: list[str] = []
+        self.gates: dict[str, asyncio.Event] = {}
+
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        return [
+            sources.Gig(artist=name, detail_url=f"https://{self.host}/{name}/", time="8pm")
+            for name in self.sessions
+        ]
+
+    async def expand(self, gig: sources.Gig, start_date: str, end_date: str) -> list[sources.Gig]:
+        name = gig.artist or ""
+        self.expanded.append(name)
+        if name in self.gates:
+            await self.gates[name].wait()
+        if self.sessions[name] < 0:
+            raise RuntimeError("boom")
+        return [
+            gig.model_copy(update={"artist": f"{name}{i}"})
+            for i in range(self.sessions[name])
+        ]
+
+
+def test_the_totals_sum_to_the_rows() -> None:
+    member = Expander("x.test", {"drop": 0, "keep": 1, "three": 3, "bad": -1})
+    lines = asyncio.run(stream({"x": member}))
+
+    assert lines[0] == {"total": 4}
+    assert sum(line["total"] for line in lines if "total" in line) == len(artists(lines)) == 4
+
+
+def test_a_blocked_expand_holds_no_other_line() -> None:
+    member = Expander("x.test", {"slow": 1, "fast": 1})
+    member.gates["slow"] = asyncio.Event()
+
+    async def run() -> list[dict[str, Any]]:
+        response = await server.event_stream(cast(Any, {"x": member}), "2026-10-01", "2026-10-01")
+        body = cast(Any, response.body_iterator)
+        first = json.loads(await asyncio.wait_for(body.__anext__(), 5))
+        gig = json.loads(await asyncio.wait_for(body.__anext__(), 5))
+        member.gates["slow"].set()
+        return [first, gig, *[json.loads(line) async for line in body]]
+
+    lines = asyncio.run(run())
+
+    assert lines[0] == {"total": 2}
+    assert lines[1]["gig"]["artist"] == "fast0"
+    assert sorted(artists(lines)) == ["fast0", "slow0"]
+
+
+def test_the_cold_stream_saves_and_the_warm_one_skips_expand(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gigmap import stores
+
+    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
+    raw = Expander("x.test", {"a": 2, "b": 0})
+    member = stores.CachedSource(cast(Any, raw), stores.DataStores(server.data_dir))
+
+    cold = asyncio.run(stream({"x": cast(Any, member)}))
+    raw.expanded.clear()
+    warm = asyncio.run(stream({"x": cast(Any, member)}))
+
+    assert sorted(artists(cold)) == sorted(artists(warm)) == ["a0", "a1"]
+    assert raw.expanded == []
+    assert warm[0] == {"total": 2}
+
+
+def test_a_cancelled_stream_saves_nothing(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gigmap import stores
+
+    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
+    raw = Expander("x.test", {"a": 1, "b": 1})
+    raw.gates["b"] = asyncio.Event()
+    member = stores.CachedSource(cast(Any, raw), stores.DataStores(server.data_dir))
+
+    async def run() -> None:
+        response = await server.event_stream(cast(Any, {"x": member}), "2026-10-01", "2026-10-01")
+        body = cast(Any, response.body_iterator)
+        await body.__anext__()
+        await body.__anext__()
+        await body.aclose()
+
+    asyncio.run(run())
+
+    assert not list(tmp_path.glob("days/*.json"))
+
+
+def test_one_failed_list_leaves_the_other_member_streaming() -> None:
+    lines = asyncio.run(stream({"a": Member("a.test", fail=True), "b": Member("b.test")}))
+
+    assert artists(lines) == ["b.test"]

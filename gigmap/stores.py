@@ -337,6 +337,28 @@ class CachedSource:
             raise sources.SourceError("the source gave no gig list")
         return gigs
 
+    def cached_gigs(self, start_date: str, end_date: str) -> list[sources.Gig] | None:
+        """Return the warm day file, or None."""
+        return self._stores.days.load(f"{start_date}_{end_date}")
+
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        # A source with no `candidates` is the identity case: `gigs`.
+        read = getattr(self._source, "candidates", self._source.gigs)
+        return await read(start_date, end_date)
+
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        expand = getattr(self._source, "expand", None)
+        if expand is None:
+            return [gig]
+        return await expand(gig, start_date, end_date)
+
+    def save_gigs(
+        self, start_date: str, end_date: str, gigs: list[sources.Gig]
+    ) -> None:
+        self._stores.days.save(f"{start_date}_{end_date}", gigs)
+
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         return await self._stores.gigs.fetch(
             sources.url_key(detail_url),
