@@ -126,17 +126,17 @@ Rejected options for the total:
 
 ## Changes
 
-| Area                | Change                                                             |
-| ------------------- | ------------------------------------------------------------------ |
-| `gigmap/sources.py` | add `candidates` and `expand` to `GigSource`                       |
-| `gigmap/stores.py`  | `CachedSource`: `cached_gigs`, `candidates`, `expand`, `save_gigs` |
-| `gigmap/server.py`  | `pump`: the warm and cold paths, the correction lines              |
-| `gigmap/server.py`  | `event_lines`: take an async source of gigs                        |
-| `gigmap/server.py`  | `wait_for_a_list`: wait for a warm file or a candidate list        |
-| `gigmap/artshub.py` | `_fit` to `expand`. Remove the `ponytail:` comment                 |
-| `gigmap/whatson.py` | `_candidates` to `candidates`, `_event_gigs` to `expand`           |
-| `gigmap/index.html` | fix the stale `total` comment. No logic change                     |
-| `docs/stream.md`    | the total rule, the correction line, `DAYS_VERSION`                |
+| Area                | Change                                                               |
+| ------------------- | -------------------------------------------------------------------- |
+| `gigmap/sources.py` | add `ExpandingSource` with `candidates` and `expand`. Done in wave 1 |
+| `gigmap/stores.py`  | `CachedSource`: `cached_gigs`, `candidates`, `expand`, `save_gigs`   |
+| `gigmap/server.py`  | `pump`: the warm and cold paths, the correction lines                |
+| `gigmap/server.py`  | `event_lines`: take an async source of gigs                          |
+| `gigmap/server.py`  | `wait_for_a_list`: wait for a warm file or a candidate list          |
+| `gigmap/artshub.py` | `_fit` to `expand`. Remove the `ponytail:` comment                   |
+| `gigmap/whatson.py` | `_candidates` to `candidates`, `_event_gigs` to `expand`             |
+| `gigmap/index.html` | fix the stale `total` comment. No logic change                       |
+| `docs/stream.md`    | the total rule, the correction line, `DAYS_VERSION`                  |
 
 ## Tests
 
