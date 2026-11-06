@@ -147,6 +147,7 @@ Rejected options for the total:
 | `docs/stream.md`                                             | the total rule, the correction line, `DAYS_VERSION`                  |
 | `gigmap/artshub.py`, `gigmap/whatson.py`, `gigmap/fringe.py` | move the origin pools to module scope (D8)                           |
 | `gigmap/server.py`                                           | move the detail and venue pools to module scope (D8)                 |
+| `docs/stream.md`                                             | the shared pool rule (D8)                                            |
 
 ## Tests
 
@@ -207,4 +208,4 @@ Run the full suite. Check that every row of the tests table has a test.
 
 **Wave 4 — one agent, the shared pools (D8).**
 
-Move the origin pools to module scope in `artshub`, `whatson` and `fringe`. Move the server detail and venue pools to module scope. Add the shared-pool test. The suite stays green.
+Move the origin pools to module scope in `artshub`, `whatson` and `fringe`. Move the server detail and venue pools to module scope. Update `docs/stream.md` on the shared pools. Add the shared-pool test. The suite stays green.
