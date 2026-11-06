@@ -1,6 +1,6 @@
 # The total first, then each event as it arrives
 
-**Status:** Approved. The waves run now.
+**Status:** Done. All three waves landed.
 
 **Owner:** boscoh
 
@@ -11,7 +11,7 @@
 - Total: the candidate count. `{"total": d}` lines correct it, so it ends exact.
 - Scope: artshub, whatson, whatsonart. Beat, artscentre and fringe already comply.
 - **Risk:** a cold day file is saved only at the end of a whole stream.
-- The ask: done. The owner confirmed D1 and D4. The waves run now.
+- The ask: done. The owner confirmed D1 and D4. All three waves landed.
 
 ## Decisions
 
