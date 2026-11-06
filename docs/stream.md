@@ -37,8 +37,10 @@ A source splits a list read into two steps.
 | `candidates(start_date, end_date)`  | the reads before any per-event read             |
 | `expand(gig, start_date, end_date)` | one event read. It gives zero, one or many gigs |
 
-- `expand` owns its pool. artshub uses `PAGE_CONCURRENCY` (5). whatson uses
-  `DETAIL_CONCURRENCY` (3).
+- Each origin has one pool at module scope. Every request of the app shares
+  it (D8). artshub uses `PAGE_CONCURRENCY` (5). whatson uses
+  `DETAIL_CONCURRENCY` (3). fringe uses `REQUEST_CONCURRENCY` (8). The server
+  detail pool and venue pool are 5 each.
 - On a `SourceError`, `expand` logs it. artshub keeps the gig. whatson gives
   `[]`.
 - A source with no `expand` is the identity. `candidates` is `gigs`, and

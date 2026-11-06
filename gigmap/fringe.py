@@ -201,6 +201,8 @@ EVENT_PAGE_SIZE = 1000
 # The app makes one request for each day of a range, and the requests run
 # together. The limit is small, because the site is a small origin.
 REQUEST_CONCURRENCY = 8
+# One pool for the whole app, so every request shares the limit.
+REQUEST_POOL = asyncio.Semaphore(REQUEST_CONCURRENCY)
 # Cloudflare or the origin can answer a 5xx. The fault is short in most
 # cases, so the module retries the same read.
 SERVER_ERROR_ATTEMPTS = 2
@@ -246,13 +248,12 @@ def name_key(value: object) -> str:
 
 
 async def gather_limited(
-    calls: Sequence[Callable[[], Awaitable[T]]], limit: int
+    calls: Sequence[Callable[[], Awaitable[T]]],
 ) -> list[T]:
-    """Run the calls together, with at most `limit` in flight."""
-    semaphore = asyncio.Semaphore(limit)
+    """Run the calls together, with at most `REQUEST_CONCURRENCY` in flight."""
 
     async def run(call: Callable[[], Awaitable[T]]) -> T:
-        async with semaphore:
+        async with REQUEST_POOL:
             return await call()
 
     return list(await asyncio.gather(*(run(call) for call in calls)))
@@ -805,7 +806,6 @@ class FringeSource:
         days = days_of_range(start_date, end_date)
         payloads = await gather_limited(
             [lambda day=day: self._diary(day) for day in days],
-            REQUEST_CONCURRENCY,
         )
         return json.dumps(payloads)
 
@@ -814,7 +814,6 @@ class FringeSource:
         days = days_of_range(start_date, end_date)
         payloads = await gather_limited(
             [lambda day=day: self._diary(day) for day in days],
-            REQUEST_CONCURRENCY,
         )
         events = await self._event_index()
         venues = {

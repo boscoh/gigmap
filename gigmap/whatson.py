@@ -146,6 +146,8 @@ FORBIDDEN_DELAY_SECONDS = 3.0
 REQUEST_TIMEOUT_SECONDS = 30.0
 # The detail reads hold the most reads, so a request runs three at a time.
 DETAIL_CONCURRENCY = 3
+# One pool for the whole app, so every request shares the limit.
+DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
 PRICE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 # The session day text has no year, for example `Sat 2 Jan`. The module reads
@@ -506,7 +508,6 @@ class WhatsonSource:
 
     def __init__(self) -> None:
         self._session: curl_requests.AsyncSession | None = None
-        self._detail_pool = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
     async def __aenter__(self) -> "WhatsonSource":
         self._session = curl_requests.AsyncSession(
@@ -612,7 +613,7 @@ class WhatsonSource:
         """
         url = gig.detail_url or ""
         try:
-            async with self._detail_pool:
+            async with DETAIL_POOL:
                 body = await self._text(url)
         except sources.SourceError as error:
             LOGGER.warning("skip the event page %s: %s", url, error)

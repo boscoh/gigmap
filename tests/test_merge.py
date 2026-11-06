@@ -223,3 +223,38 @@ def test_one_failed_list_leaves_the_other_member_streaming() -> None:
     lines = asyncio.run(stream({"a": Member("a.test", fail=True), "b": Member("b.test")}))
 
     assert artists(lines) == ["b.test"]
+
+
+class Slow(Member):
+    """A member with many gigs. Each detail read waits and counts the reads in flight."""
+
+    def __init__(self, host: str, count: int, flight: list[int]) -> None:
+        super().__init__(host)
+        self.count = count
+        self.flight = flight  # [active, peak], shared by both members
+
+    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        return [
+            sources.Gig(artist=f"a{i}", detail_url=f"https://{self.host}/{i}/")
+            for i in range(self.count)
+        ]
+
+    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
+        self.flight[0] += 1
+        self.flight[1] = max(self.flight[1], self.flight[0])
+        await asyncio.sleep(0.01)
+        self.flight[0] -= 1
+        return sources.GigDetail(detail_url=detail_url, time="8pm")
+
+
+def test_two_streams_share_one_pool() -> None:
+    flight = [0, 0]
+    first, second = Slow("a.test", 8, flight), Slow("b.test", 8, flight)
+
+    async def run() -> None:
+        await asyncio.gather(stream({"a": first}), stream({"b": second}))
+
+    asyncio.run(run())
+
+    # The reads of both streams together never pass the one shared pool.
+    assert flight[1] == server.DETAIL_CONCURRENCY

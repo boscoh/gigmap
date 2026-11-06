@@ -103,6 +103,9 @@ CLEANUP_INTERVAL_SECONDS = 24 * 3600
 DETAIL_CONCURRENCY = 5
 # The venue reads use the same size of pool.
 VENUE_CONCURRENCY = 5
+# One pool of each kind for the whole app, so every request shares the limit.
+DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
+VENUE_POOL = asyncio.Semaphore(VENUE_CONCURRENCY)
 
 # The page shows a failed venue read. Any error that is not a source
 # error keeps this text, so an internal message stays on the server.
@@ -359,8 +362,6 @@ async def event_lines(
     The reads of a gig start when the gig arrives. A gig waits for its
     own two reads only, so a slow venue holds no other gig's line.
     """
-    detail_pool = asyncio.Semaphore(DETAIL_CONCURRENCY)
-    venue_pool = asyncio.Semaphore(VENUE_CONCURRENCY)
     # One venue read for each url, so a venue of many gigs costs one read.
     venues: dict[str, asyncio.Task[sources.Venue | Exception]] = {}
     tasks: list[asyncio.Task] = []
@@ -368,7 +369,7 @@ async def event_lines(
     done: asyncio.Queue = asyncio.Queue()
 
     async def one(gig: sources.Gig) -> None:
-        time_text = await detail_read(source, gig, detail_pool)
+        time_text = await detail_read(source, gig, DETAIL_POOL)
         venue: sources.Venue | Exception | None = None
         if gig.venue_url:
             venue = await venues[gig.venue_url]
@@ -380,7 +381,7 @@ async def event_lines(
                 url = gig.venue_url
                 if url and url not in venues:
                     venues[url] = asyncio.create_task(
-                        venue_read(source, url, venue_pool)
+                        venue_read(source, url, VENUE_POOL)
                     )
                 tasks.append(asyncio.create_task(one(gig)))
             await asyncio.gather(*tasks)

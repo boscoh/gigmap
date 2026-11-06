@@ -114,6 +114,8 @@ PAGE_SIZE = 200
 MAX_PAGES = 20
 # The event pages that one gig list reads at the same time.
 PAGE_CONCURRENCY = 5
+# One pool for the whole app, so every request shares the limit.
+PAGE_POOL = asyncio.Semaphore(PAGE_CONCURRENCY)
 
 # The site is behind Cloudflare. The feed and the event page answer a normal
 # request, so one browser fingerprint is enough. A challenge would answer a
@@ -279,7 +281,6 @@ class ArtshubSource:
 
     def __init__(self) -> None:
         self._session: curl_requests.AsyncSession | None = None
-        self._pool = asyncio.Semaphore(PAGE_CONCURRENCY)
 
     async def __aenter__(self) -> "ArtshubSource":
         self._session = curl_requests.AsyncSession(
@@ -396,7 +397,7 @@ class ArtshubSource:
         if gig.detail_url is None or DETAIL_URL_RE.fullmatch(gig.detail_url) is None:
             return [gig]
         try:
-            async with self._pool:
+            async with PAGE_POOL:
                 page = await self._text(gig.detail_url)
         except sources.SourceError as error:
             LOGGER.warning("cannot read %s: %s", gig.detail_url, error)
