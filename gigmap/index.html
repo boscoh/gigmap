@@ -1130,8 +1130,8 @@
 
         const busy = computed(() => loading.value || streaming.value);
 
-        // The response header holds the count of the range, so the line
-        // can show the progress before the first row arrives.
+        // The stream sends `{"total": n}` lines. The page adds them, so the
+        // line can show the progress before the first row arrives.
         const total = ref(0);
         const gigsText = computed(() => {
             if (!gigs.value.length && !total.value) {
