@@ -80,6 +80,7 @@ Rejected options for the total:
 - `candidates(start_date, end_date) -> list[Gig]`: the reads before any per-event read.
 - `expand(gig, start_date, end_date) -> list[Gig]`: one event read. It gives zero, one or many gigs.
 - `expand` owns its pool: artshub `PAGE_CONCURRENCY` (5), whatson `DETAIL_CONCURRENCY` (3).
+- All `expand` reads run at the same time, and the pool queue keeps the candidate order.
 - On a `SourceError`, `expand` logs it. artshub keeps the gig. whatson gives `[]`.
 - `gigs` stays, as `candidates` plus a `gather` of `expand`.
 - No `expand`: `candidates` is `gigs`, and `expand` gives `[gig]`. The server uses `getattr`.
@@ -157,12 +158,13 @@ Rejected options for the total:
 - A cold artshub page shows rows at the pace of the event pages, not after all of them.
 - Two cold requests for one range both run `expand`. Today both run `gigs`, so the cost is equal.
 
-| Question                                                                       | Assumed default                    | Owner  |
-| ------------------------------------------------------------------------------ | ---------------------------------- | ------ |
-| Q1: does "immediately" include the venue read?                                 | yes (D7). Confirmed                | boscoh |
-| Q2: stream fringe per day, with a per-day total?                               | no. Not per event. Confirmed       | boscoh |
-| Q3: is a total that moves up and down clear to a reader?                       | yes. It ends exact. confirmed      | boscoh |
-| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Grow `docs/stream.md` into it | boscoh |
+| Question                                                                       | Assumed default                            | Owner  |
+| ------------------------------------------------------------------------------ | ------------------------------------------ | ------ |
+| Q1: does "immediately" include the venue read?                                 | yes (D7). Confirmed                        | boscoh |
+| Q2: stream fringe per day, with a per-day total?                               | no. Not per event. Confirmed               | boscoh |
+| Q3: is a total that moves up and down clear to a reader?                       | yes. It ends exact. confirmed              | boscoh |
+| Q4: describe the streaming, reading and updating strategy in one readable doc? | yes. Grow `docs/stream.md` into it         | boscoh |
+| Q5: does the stream fetch the events in order, or at the same time?            | at the same time. Each pool caps the reads | boscoh |
 
 Assumption: the whatson search gives each event card once. `_candidates` dedupes by url.
 
