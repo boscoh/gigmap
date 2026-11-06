@@ -1,6 +1,6 @@
 # The total first, then each event as it arrives
 
-**Status:** Landed, with D8 open: one shared read pool per origin.
+**Status:** Landed. All four waves done.
 
 **Owner:** boscoh
 
@@ -11,20 +11,20 @@
 - Total: the candidate count. `{"total": d}` lines correct it, so it ends exact.
 - Scope: artshub, whatson, whatsonart. Beat, artscentre and fringe already comply.
 - **Risk:** a cold day file is saved only at the end of a whole stream.
-- The ask: done. The owner confirmed D1 and D4. All three waves landed.
+- The ask: done. The owner confirmed D1 and D4. All four waves landed.
 
 ## Decisions
 
-| Id  | Decision                                                                 | Reason                              |
-| --- | ------------------------------------------------------------------------ | ----------------------------------- |
-| D1  | First total = candidate count. Corrections follow. **Confirmed.**        | Known before any per-event read     |
-| D2  | A correction is a `{"total": d}` line. `d` can be negative.              | The page adds every `total` line    |
-| D3  | New `candidates` and `expand`. No `expand` means identity.               | Four sources need no new code       |
-| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**               | A warm page reads no event page     |
-| D5  | Keep the 502. Wait for a candidate list or a warm day file.              | The headers leave before line one   |
-| D6  | Per-member `total` lines. The page adds them into one total.             | No page change                      |
-| D7  | A gig line still waits for its own venue read.                           | The rule of `docs/stream.md`        |
-| D8  | One shared read pool per origin, process-wide. **Confirmed. Open work.** | The owner wants no spam at a source |
+| Id  | Decision                                                                      | Reason                              |
+| --- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| D1  | First total = candidate count. Corrections follow. **Confirmed.**             | Known before any per-event read     |
+| D2  | A correction is a `{"total": d}` line. `d` can be negative.                   | The page adds every `total` line    |
+| D3  | New `candidates` and `expand`. No `expand` means identity.                    | Four sources need no new code       |
+| D4  | Day file = final list. Warm skips `expand`. **Confirmed.**                    | A warm page reads no event page     |
+| D5  | Keep the 502. Wait for a candidate list or a warm day file.                   | The headers leave before line one   |
+| D6  | Per-member `total` lines. The page adds them into one total.                  | No page change                      |
+| D7  | A gig line still waits for its own venue read.                                | The rule of `docs/stream.md`        |
+| D8  | One shared read pool per origin, process-wide. **Confirmed. Done in wave 4.** | The owner wants no spam at a source |
 
 Rejected options for the total:
 
@@ -70,7 +70,7 @@ Rejected options for the total:
 - The page never reads `index`.
 - `CachedSource.gigs` caches the final list in `data/days/` for `DAYS_CACHE_SECONDS` (3 hours).
 
-### Contradictions, not resolved
+### Contradictions at spec time, both fixed in wave 2
 
 - `docs/stream.md` says `DAYS_VERSION` stays `v7`. `gigmap/stores.py` holds `v10`.
 - An `index.html` comment says "The response header holds the count". The header is gone.
@@ -168,6 +168,7 @@ Rejected options for the total:
 
 - A cold artshub page shows rows at the pace of the event pages, not after all of them.
 - Two cold requests for one range both run `expand`. Today both run `gigs`, so the cost is equal.
+- The module pools bind to one event loop when a read first waits. The app runs one loop. A test that waits on one pool in two `asyncio.run` calls fails.
 
 | Question                                                                       | Assumed default                                             | Owner  |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------ |
