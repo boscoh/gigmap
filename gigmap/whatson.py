@@ -506,6 +506,7 @@ class WhatsonSource:
 
     def __init__(self) -> None:
         self._session: curl_requests.AsyncSession | None = None
+        self._detail_pool = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
     async def __aenter__(self) -> "WhatsonSource":
         self._session = curl_requests.AsyncSession(
@@ -576,19 +577,15 @@ class WhatsonSource:
 
     async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the gigs of a date range, one gig for each session day."""
-        candidates = await self._candidates(start_date, end_date)
-        semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
-        reads = [
-            self._event_gigs(card, start_date, end_date, semaphore)
-            for card in candidates
-        ]
+        candidates = await self.candidates(start_date, end_date)
+        reads = [self.expand(card, start_date, end_date) for card in candidates]
         return [gig for gigs in await asyncio.gather(*reads) for gig in gigs]
 
-    async def _candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the candidate cards of one range, one card for each event.
 
         A card of the search page holds no real session, so the cards are the
-        input of the detail reads and not the gigs. A url appears once.
+        input of `expand` and not the gigs. A url appears once.
         """
         seen: set[str] = set()
         candidates: list[sources.Gig] = []
@@ -605,26 +602,22 @@ class WhatsonSource:
                 break
         return candidates
 
-    async def _event_gigs(
-        self,
-        card: sources.Gig,
-        start_date: str,
-        end_date: str,
-        semaphore: asyncio.Semaphore,
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
     ) -> list[sources.Gig]:
-        """Return the gigs of one event page, and none when its read fails.
+        """Return the session gigs of one event, and none when its read fails.
 
         One event page that fails must not lose the other events of the range,
         so a source error drops this event only and is logged.
         """
-        url = card.detail_url or ""
+        url = gig.detail_url or ""
         try:
-            async with semaphore:
+            async with self._detail_pool:
                 body = await self._text(url)
         except sources.SourceError as error:
             LOGGER.warning("skip the event page %s: %s", url, error)
             return []
-        return parse_event(body, card, start_date, end_date)
+        return parse_event(body, gig, start_date, end_date)
 
     async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
         """Return the detail of one event.

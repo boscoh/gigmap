@@ -282,3 +282,45 @@ def test_a_wrong_venue_url_stops_the_read() -> None:
 
     with pytest.raises(sources.SourceUrlError):
         asyncio.run(run())
+
+
+def stub_source(pages: dict[str, str]) -> whatson.WhatsonSource:
+    """Return a source whose page reads come from `pages`; a missing url fails."""
+    source = whatson.WhatsonSource()
+
+    async def fake_text(url: str, params=None) -> str:
+        if url not in pages:
+            raise sources.SourceError("boom")
+        return pages[url]
+
+    source._text = fake_text  # type: ignore[method-assign]
+    return source
+
+
+def test_expand_gives_one_gig_per_session() -> None:
+    url = "https://whatson.melbourne.vic.gov.au/things-to-do/the-vaudeville-revue"
+    source = stub_source({url: TICKETED_EVENT})
+    gigs = asyncio.run(
+        source.expand(
+            sources.Gig(artist="The Vaudeville Revue", detail_url=url),
+            "2026-11-07",
+            "2027-01-02",
+        )
+    )
+    assert [gig.date for gig in gigs] == ["2026-11-07", "2026-11-08", "2027-01-02"]
+
+
+def test_a_failed_event_page_drops_that_event_only() -> None:
+    base = "https://whatson.melbourne.vic.gov.au/things-to-do/"
+    good = sources.Gig(artist="Good", detail_url=base + "good")
+    bad = sources.Gig(artist="Bad", detail_url=base + "bad")
+    source = stub_source({base + "good": TICKETED_EVENT})
+
+    async def run() -> list[list[sources.Gig]]:
+        return await asyncio.gather(
+            *(source.expand(g, "2026-11-07", "2026-11-08") for g in (bad, good))
+        )
+
+    failed, ok = asyncio.run(run())
+    assert failed == []
+    assert len(ok) == 2
