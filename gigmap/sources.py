@@ -161,6 +161,24 @@ class GigSource(Protocol):
         ...
 
 
+class ExpandingSource(GigSource, Protocol):
+    """A gig source that splits its list read into `candidates` and `expand`.
+
+    A source with no `expand` is the identity case: `candidates` is `gigs`
+    and `expand` gives `[gig]`. The server finds out with `getattr`.
+    """
+
+    # pi-lens-ignore: no-ellipsis-body
+    async def candidates(self, start_date: str, end_date: str) -> list[Gig]:
+        """Return the gigs known after the reads before any per-event read."""
+        ...
+
+    # pi-lens-ignore: no-ellipsis-body
+    async def expand(self, gig: Gig, start_date: str, end_date: str) -> list[Gig]:
+        """Read one event. Return zero, one or many gigs."""
+        ...
+
+
 class SourcePool(Protocol):
     """A gig source that owns a connection pool.
 

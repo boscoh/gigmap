@@ -397,6 +397,20 @@ async def event_lines(
         await asyncio.gather(*tasks, *reads, return_exceptions=True)
 
 
+def candidates_of(member: sources.GigSource):
+    """The candidates read of a member. A source with no `expand` uses `gigs`."""
+    return getattr(member, "candidates", member.gigs)
+
+
+def expand_of(member: sources.GigSource):
+    """The expand read of a member. A source with no `expand` gives `[gig]`."""
+
+    async def identity(gig: sources.Gig, _start_date: str, _end_date: str) -> list[sources.Gig]:
+        return [gig]
+
+    return getattr(member, "expand", identity)
+
+
 async def wait_for_a_list(lists: dict[str, asyncio.Task[list[sources.Gig]]]) -> None:
     """Return when one member has its gig list. Raise when every member fails.
 
