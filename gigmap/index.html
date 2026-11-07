@@ -339,21 +339,6 @@
           table-layout: fixed;
       }
 
-      /* The time cell holds the hours of a run, for example
-         `Wed - Sat 11am - 3pm`. The text is smaller than the rest of the row,
-         so a range of hours fits one line in the time column. The cell can
-         still break between the parts of a long run, at a space or a comma. */
-      .gig-table .time-text {
-          font-size: 1rem;
-          line-height: 1.25;
-      }
-
-      /* The start date and the end date of a run each stay on one line,
-         so the time column never wraps a date range. */
-      .gig-table .date-text {
-          white-space: nowrap;
-      }
-
       .gig-table thead th {
           background: #fff;
           border-bottom: 1px solid #e9ecef;
@@ -673,10 +658,10 @@
                 //- Its width stays open, so the browser gives it every pixel
                 //- that the three measured columns do not use. A measured
                 //- column keeps its share and never grows into that space.
-                //- The time column holds the hours of a run, for example
-                //- 'Wed-Sat 11am-3pm'. A range of hours does not break, so the
-                //- column is as wide as the longest range, '11:15am-12:15pm'.
-                col(:style="isNarrow ? {width: '7.5rem'} : {width: '8.5rem'}")
+                //- The wide time column holds a range of hours on one line,
+                //- '11:15am - 12:15pm'. The narrow time column holds the parts
+                //- of a run on two lines, so it stays narrow.
+                col(:style="isNarrow ? {width: '4.75rem'} : {width: '8.5rem'}")
                 col.artist-col(:style="isNarrow ? {} : {width: '50%'}")
                 col.venue-col(:style="isNarrow ? {width: '15%'} : {}")
                 col(:style="isNarrow ? {width: '5rem'} : {width: '5.5rem'}")
@@ -713,13 +698,10 @@
                   @click="selectGig(gig, $event)"
                 )
                   td
-                    div.time-text(v-if="gig.hours || gig.time")
-                      | {{ timeText(gig.hours || gig.time) }}
-                    div.text-muted.date-text
-                      | {{ formatDate(gig.date) }}
-                      span(v-if="gig.end_date")
-                        =" "
-                        | → {{ formatDate(gig.end_date) }}
+                    div(v-for="line in timeLines(gig, isNarrow)")
+                      | {{ line }}
+                    div.text-muted(v-for="line in dateLines(gig, isNarrow)")
+                      | {{ line }}
                   td
                     .artist-line
                       span.artist-name
@@ -847,10 +829,44 @@
         return monthName ? `${Number(parts[2])} ${monthName}` : value;
     }
 
-    // A range of hours is one word, for example '11:15am-12:15pm'. The dash
-    // is a non-breaking hyphen, so the range never wraps in the time column.
-    function timeText(value) {
-        return value.replace(/\s*-\s*/g, "\u2011");
+    // A narrow screen holds the hours of a run on two lines: the days first,
+    // then the hours span. A bare span breaks after its hyphen, so '9am - 5pm'
+    // gives '9am -' and '5pm'. A wide screen holds the whole text on one line.
+    function timeLines(gig, narrow) {
+        const value = gig.hours || gig.time;
+        if (!value) {
+            return [];
+        }
+        if (!narrow) {
+            return [value];
+        }
+        const lines = [];
+        for (const group of value.split(/\s*,\s*/)) {
+            const span = group.match(/\d\S*\s*-\s*\d\S*$/);
+            if (span === null) {
+                lines.push(group);
+                continue;
+            }
+            const days = group.slice(0, span.index).trim();
+            if (days) {
+                lines.push(days, span[0]);
+            } else {
+                const [start, end] = span[0].split(/\s*-\s*/);
+                lines.push(`${start} -`, end);
+            }
+        }
+        return lines;
+    }
+
+    // The run dates take one line on a wide screen. A narrow screen holds the
+    // start date and then the end date, so the separator ends the first line.
+    function dateLines(gig, narrow) {
+        const start = formatDate(gig.date);
+        if (!gig.end_date) {
+            return [start];
+        }
+        const end = formatDate(gig.end_date);
+        return narrow ? [`${start} -`, end] : [`${start} - ${end}`];
     }
 
     function tagLine(gig) {
@@ -1658,7 +1674,8 @@
             startDrag,
             activeVenueUrl,
             formatDate,
-            timeText,
+            timeLines,
+            dateLines,
             tagLine,
             ticketButtonClass,
             ticketTextClass,
