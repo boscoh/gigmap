@@ -817,7 +817,9 @@
             .replaceAll(">", "&gt;");
     }
 
-    function formatDate(value) {
+    // `withYear` marks a run that crosses a year, because the year is the only
+    // difference between its two dates.
+    function formatDate(value, withYear) {
         if (!value) {
             return "";
         }
@@ -826,7 +828,11 @@
             return value;
         }
         const monthName = MONTHS[Number(parts[1]) - 1];
-        return monthName ? `${Number(parts[2])} ${monthName}` : value;
+        if (!monthName) {
+            return value;
+        }
+        const day = `${Number(parts[2])} ${monthName}`;
+        return withYear ? `${day} ${parts[0]}` : day;
     }
 
     // A narrow screen holds the hours of a run on two lines: the days first,
@@ -861,11 +867,15 @@
     // The run dates take one line on a wide screen. A narrow screen holds the
     // start date and then the end date, so the separator ends the first line.
     function dateLines(gig, narrow) {
-        const start = formatDate(gig.date);
         if (!gig.end_date) {
-            return [start];
+            return [formatDate(gig.date)];
         }
-        const end = formatDate(gig.end_date);
+        // A run that crosses a year needs both years, or '29 Aug - 29 Aug'
+        // reads as one day.
+        const crosses =
+            Boolean(gig.date) && gig.date.slice(0, 4) !== gig.end_date.slice(0, 4);
+        const start = formatDate(gig.date, crosses);
+        const end = formatDate(gig.end_date, crosses);
         return narrow ? [`${start} -`, end] : [`${start} - ${end}`];
     }
 
