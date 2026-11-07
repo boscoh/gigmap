@@ -9,3 +9,4 @@ data/
 deploy.sh
 docs/domain.md
 docs/deploy.md
+.env

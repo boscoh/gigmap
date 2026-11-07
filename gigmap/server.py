@@ -26,7 +26,17 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from gigmap import artscentre, artshub, beat, fringe, sources, stores, whatson, whatson_art
+from gigmap import (
+    artscentre,
+    artshub,
+    beat,
+    fringe,
+    sources,
+    stores,
+    ticketmaster,
+    whatson,
+    whatson_art,
+)
 from gigmap.logger import log_incoming, log_kv, setup_logging
 from gigmap.stores import DATA_DIR_ENV, data_dir
 
@@ -49,13 +59,14 @@ SOURCE_FACTORIES: dict[str, Callable[[], sources.SourcePool]] = {
     "fringe": fringe.FringeSource,
     "whatson": whatson.WhatsonSource,
     "whatsonart": whatson_art.WhatsonArtSource,
+    "ticketmaster": ticketmaster.TicketmasterSource,
 }
 # A group page merges its members into one map. `/gigs/` holds the three
 # sources that give a time of day for each gig. `/art/` holds the two art
 # sources. artshub and fringe are not members of `gigs`. The page of each
 # member is still at its own path.
 GROUPS: dict[str, tuple[str, ...]] = {
-    "gigs": ("artscentre", "beat", "whatson"),
+    "gigs": ("artscentre", "beat", "whatson", "ticketmaster"),
     "art": ("artshub", "whatsonart"),
 }
 GIG_SOURCE_NAME = "gigs"
@@ -82,6 +93,7 @@ SOURCE_INFO: dict[str, sources.SourceInfo] = {
     "fringe": fringe.SOURCE,
     "whatson": whatson.SOURCE,
     "whatsonart": whatson_art.SOURCE,
+    "ticketmaster": ticketmaster.SOURCE,
 }
 # The header of a group page links each member by its short name.
 for _group, _names in GROUPS.items():
