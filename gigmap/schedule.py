@@ -220,7 +220,8 @@ def fit_dates(
     its text range and on one of its days. The start time is the opening time
     of the first such date, so the page sorts the row by it. The hours text
     names the days that it applies to: no day for a one-day range, because
-    the page names that day, and the weekday names for a longer range. A run
+    the page names that day, and the weekday names for a longer range. A day
+    that holds two spans gives both, such as `10am - 5pm, 6pm - 9pm`. A run
     with no hours has no start time and no hours text.
     """
     low, high = date.fromisoformat(start_date), date.fromisoformat(end_date)
@@ -240,14 +241,13 @@ def fit_dates(
     starts = [h.opens for h in schedule.hours if open_day.weekday() in h.days]
     start = clock_text(starts[0]) if starts else None
     if low == high:
-        text = next(
-            (
-                span_text(h.opens, h.closes)
-                for h in schedule.hours
-                if low.weekday() in h.days
-            ),
-            None,
-        )
+        # One weekday can hold two spans, such as a late night on Friday.
+        spans = [
+            span_text(h.opens, h.closes)
+            for h in schedule.hours
+            if low.weekday() in h.days
+        ]
+        text = ", ".join(span for span in spans if span) or None
     else:
         text = (
             ", ".join(

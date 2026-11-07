@@ -106,6 +106,13 @@ FIT = [
         "2026-11-04",
         (True, "10:00am", "daily 10am - 5pm"),
     ),
+    # One weekday with two spans, such as a late night on Friday.
+    (
+        Schedule(days=[4], hours=[H([4], "10:00", "17:00"), H([4], "18:00", "21:00")]),
+        "2026-11-13",
+        "2026-11-13",
+        (True, "10:00am", "10am - 5pm, 6pm - 9pm"),
+    ),
 ]
 
 
