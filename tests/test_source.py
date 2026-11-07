@@ -325,9 +325,9 @@ def test_the_event_line_holds_every_gig_field(
 
 
 def _lines(response: Any) -> list[dict[str, Any]]:
-    """Return the gig lines of an NDJSON answer, without the total lines."""
+    """Return the gig lines of an NDJSON answer, without total and done."""
     lines = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-    return [line for line in lines if "total" not in line]
+    return [line for line in lines if "total" not in line and "done" not in line]
 
 
 def test_the_removed_reads_answer_404(
@@ -497,6 +497,7 @@ def test_a_blocked_venue_holds_no_other_line(
             rest = [json.loads(line) async for line in lines]
         finally:
             pending.cancel()
+        assert rest.pop() == {"done": True, "failed": []}
         return [fast, *rest]
 
     lines = asyncio.run(run())
@@ -520,7 +521,9 @@ def test_a_damaged_date_answers_400(
     assert fake.calls == []
 
 
-def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> None:
+def test_a_source_error_answers_200_and_done(
+    client: tuple[TestClient, FakeSource],
+) -> None:
     http, fake = client
     fake.gig_error = sources.SourceError("cannot reach beat.com.au")
 
@@ -529,8 +532,18 @@ def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> No
         params={"start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
 
-    assert response.status_code == 502
-    assert response.json() == {"detail": "cannot reach beat.com.au"}
+    assert response.status_code == 200
+    lines = [json.loads(line) for line in response.text.splitlines()]
+    assert lines[-1] == {
+        "done": True,
+        "failed": [
+            {
+                "source": "beat",
+                "failed": "cannot reach beat.com.au",
+                "code": "source_error",
+            }
+        ],
+    }
 
 
 async def _no_place(name: str | None, address: str | None) -> dict | None:

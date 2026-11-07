@@ -651,6 +651,8 @@
 
             .alert.alert-danger(v-if="error")
               | {{ error }}
+              button.btn.btn-sm.btn-outline-danger.ms-2(v-if="cutOff", :disabled="busy", @click="retry")
+                | Retry
 
             table.table.table-sm.table-hover.align-top.mb-0.gig-table(v-if="loading || gigs.length")
               colgroup
@@ -993,6 +995,8 @@
         const gigs = ref([]);
         const loading = ref(false);
         const error = ref("");
+        // True when the stream ended with no `done` line.
+        const cutOff = ref(false);
         const selectedGig = ref(null);
         const venue = ref({data: null, error: ""});
         const streaming = ref(false);
@@ -1080,6 +1084,7 @@
             endDate.value = range.end || isoDate(range.to);
             loading.value = true;
             error.value = "";
+            cutOff.value = false;
             selectedGig.value = null;
             venue.value = {data: null, error: ""};
             if (map) {
@@ -1508,6 +1513,10 @@
             });
         }
 
+        function retry() {
+            load(RANGES.find((range) => range.id === active.value) || RANGES[0]);
+        }
+
         function stopEvents() {
             eventRun += 1;
             if (eventSource) {
@@ -1524,6 +1533,7 @@
             lastFit = 0;
             eventSource = new AbortController();
             streaming.value = true;
+            let sawDone = false;
             try {
                 // One stream for the whole range. The server makes one
                 // detail read for each gig and one venue read for each
@@ -1552,6 +1562,18 @@
                     // the progress before its first row.
                     if (update.total !== undefined) {
                         total.value += update.total;
+                        continue;
+                    }
+                    // Test `done` before `failed`: both carry the source key.
+                    if (update.done) {
+                        sawDone = true;
+                        if (update.failed.length) {
+                            error.value = `Could not load: ${update.failed.map((one) => one.source).join(", ")}`;
+                        }
+                        continue;
+                    }
+                    // A `failed` line has no gig. The `done` line lists it.
+                    if (update.failed !== undefined) {
                         continue;
                     }
                     // Each line holds the whole gig, so the row needs
@@ -1596,6 +1618,11 @@
                 }
             } finally {
                 if (runId === eventRun) {
+                    // No `done` line means the stream was cut, even with rows.
+                    if (!sawDone) {
+                        cutOff.value = true;
+                        error.value = "the list was cut off";
+                    }
                     eventSource = null;
                     streaming.value = false;
                     loading.value = false;
@@ -1672,6 +1699,8 @@
             gigs,
             loading,
             error,
+            cutOff,
+            retry,
             load,
             selectedGig,
             venue,

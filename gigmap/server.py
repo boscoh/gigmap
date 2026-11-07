@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -121,7 +122,15 @@ VENUE_FAILURE_TEXT = "the venue lookup failed"
 
 # nginx holds a small stream in its buffers until the source closes it.
 # This header makes nginx pass each line to the page at once.
-STREAM_HEADERS = {"X-Accel-Buffering": "no"}
+# no-transform stops an edge from buffering or recoding the lines.
+STREAM_HEADERS = {
+    "X-Accel-Buffering": "no",
+    "Cache-Control": "no-store, no-transform",
+}
+# nginx cuts a silent gap at 60 s, so a quiet stream sends a heartbeat.
+HEARTBEAT_SECONDS = 25
+# A stalled reader pauses the pumps at this many queued lines.
+STREAM_QUEUE_LINES = 64
 
 # The page holds the whole app, so a browser keeps no copy. Without this
 # header a browser can show the app of an older deploy, and a new field of
@@ -414,30 +423,6 @@ async def read_list(
     return await fetch_once(name, member, start_date, end_date), False
 
 
-async def wait_for_a_list(
-    lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
-) -> None:
-    """Return when one member has a warm day file or a candidate list.
-
-    Raise when every member fails. The route needs one list before it sends
-    the headers, so a total failure still answers 502. A later failure is a
-    log line only.
-    """
-    pending = set(lists.values())
-    while pending:
-        done, pending = await asyncio.wait(
-            pending, return_when=asyncio.FIRST_COMPLETED
-        )
-        if any(task.exception() is None for task in done):
-            return
-    for name, task in lists.items():
-        log_kv(LOGGER.warning, "source failed", source=name, error=task.exception())
-    error = next(iter(lists.values())).exception()
-    if isinstance(error, sources.SourceError):
-        raise error
-    raise sources.SourceError("no source gave a gig list")
-
-
 async def merged_lines(
     members: dict[str, stores.CachedGigSource],
     lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
@@ -447,11 +432,13 @@ async def merged_lines(
     """Yield the lines of every member, as each line arrives.
 
     Each member has its own list read and its own pools, so a slow member
-    holds no line of a fast member. A member that fails is logged and left
-    out. A member sends `{"total": n}` before its first event read, then a
+    holds no line of a fast member. A member that fails is logged, sends a
+    `failed` line and is left out; the stream ends with a `done` line that
+    lists the failed members. A member sends `{"total": n}` before its first event read, then a
     correction `{"total": d}` after each `expand` that does not give one gig.
     """
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=STREAM_QUEUE_LINES)
+    failed: list[dict[str, str]] = []
 
     async def pump(name: str, member: stores.CachedGigSource) -> None:
         running = 0  # the sum of the total lines of this member
@@ -492,6 +479,14 @@ async def merged_lines(
                             await send_total(len(part) - 1)
                         for gig in part:
                             yield gig
+                    # Every expand is done: a cut after this leaves a warm
+                    # file, so the retry skips the fetch.
+                    if clean:
+                        member.save_gigs(
+                            start_date,
+                            end_date,
+                            [g for part in expanded for g in part],
+                        )
                 finally:
                     for task in reads:
                         task.cancel()
@@ -499,22 +494,32 @@ async def merged_lines(
             async for line in event_lines(member, stream()):
                 sent += 1
                 await queue.put(line)
-            if not warm and clean:
-                member.save_gigs(
-                    start_date, end_date, [g for part in expanded for g in part]
-                )
         except Exception as error:
             log_kv(LOGGER.warning, "source failed", source=name, error=error)
+            code = "source_error" if isinstance(error, sources.SourceError) else "internal"
+            reason = str(error) if code == "source_error" else "internal error"
+            one = {"source": name, "failed": reason, "code": code}
+            failed.append(one)
+            await queue.put(json.dumps(one) + "\n")
             if running != sent:
                 await queue.put(json.dumps({"total": sent - running}) + "\n")
         finally:
-            await queue.put(None)
+            # A cancelled pump must not wait on a full queue. The loop below
+            # also stops on done tasks, so a dropped sentinel costs nothing.
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(None)
 
     tasks = [asyncio.create_task(pump(name, member)) for name, member in members.items()]
     try:
-        for _ in tasks:
-            while (line := await queue.get()) is not None:
+        while not (all(task.done() for task in tasks) and queue.empty()):
+            try:
+                line = await asyncio.wait_for(queue.get(), HEARTBEAT_SECONDS)
+            except asyncio.TimeoutError:
+                yield json.dumps({"total": 0}) + "\n"
+                continue
+            if line is not None:
                 yield line
+        yield json.dumps({"done": True, "failed": failed}) + "\n"
     finally:
         # A client disconnect cancels every member.
         for task in tasks:
@@ -534,7 +539,6 @@ async def event_stream(
         name: asyncio.create_task(read_list(name, member, start_date, end_date))
         for name, member in members.items()
     }
-    await wait_for_a_list(lists)
     return StreamingResponse(
         merged_lines(members, lists, start_date, end_date),
         media_type="application/x-ndjson",
