@@ -170,14 +170,14 @@ def test_the_time_text_strips_the_end_time() -> None:
 
 def test_a_ticketed_event_holds_one_gig_per_session_day() -> None:
     page = BeautifulSoup(TICKETED_EVENT, "lxml")
-    sessions = whatson.parse_sessions(page, "2026-11-07", "2026-11-08")
-    assert [day for day, _ in sessions] == ["2026-11-07", "2026-11-08"]
+    sessions = whatson.parse_sessions(page)
+    assert [day for day, _ in sessions][:2] == ["Sat 7 Nov", "Sun 8 Nov"]
 
 
 def test_a_day_with_two_shows_keeps_the_first_time() -> None:
     page = BeautifulSoup(TICKETED_EVENT, "lxml")
-    sessions = dict(whatson.parse_sessions(page, "2026-11-08", "2026-11-08"))
-    assert sessions["2026-11-08"] == "1:00pm"
+    sessions = dict(whatson.parse_sessions(page))
+    assert sessions["Sun 8 Nov"] == "1:00pm"
 
 
 def test_the_ticketed_event_holds_the_ticket_and_the_venue() -> None:
@@ -324,3 +324,69 @@ def test_a_failed_event_page_drops_that_event_only() -> None:
     failed, ok = asyncio.run(run())
     assert failed == []
     assert len(ok) == 2
+
+
+def expand_ranges(
+    source: whatson.WhatsonSource,
+    page: str,
+    title: str,
+    ranges: list[tuple[str, str]],
+    calls: list[str],
+) -> list[list[sources.Gig]]:
+    async def text(url: str, *_a: object, **_k: object) -> str:
+        calls.append(url)
+        return page
+
+    source._text = text  # type: ignore[method-assign]
+    gig = card(title)
+
+    async def run() -> list[list[sources.Gig]]:
+        return [await source.expand(gig, s, e) for s, e in ranges]
+
+    return asyncio.run(run())
+
+
+def test_read_event_gives_the_raw_session_pairs() -> None:
+    event = whatson.read_event(TICKETED_EVENT)
+    assert event is not None
+    assert event.sessions[:2] == [("Sat 7 Nov", "7:30pm"), ("Sun 8 Nov", "1:00pm")]
+    assert event.venue_name == "The Butterfly Club"
+    assert whatson.read_event("<html></html>") is None
+
+
+def test_fit_event_matches_parse_event() -> None:
+    event = whatson.read_event(TICKETED_EVENT)
+    assert event is not None
+    the_card = card("The Vaudeville Revue")
+    fitted = whatson.fit_event(event, the_card, "2026-11-07", "2026-11-08")
+    parsed = whatson.parse_event(TICKETED_EVENT, the_card, "2026-11-07", "2026-11-08")
+    assert fitted == parsed
+    assert len(fitted) == 2
+
+
+def test_overlapping_ranges_share_one_whatson_read() -> None:
+    calls: list[str] = []
+    both, second = expand_ranges(
+        whatson.WhatsonSource(),
+        TICKETED_EVENT,
+        "The Vaudeville Revue",
+        [("2026-11-07", "2026-11-08"), ("2026-11-08", "2026-11-08")],
+        calls,
+    )
+    assert len(calls) == 1
+    assert [g.date for g in both] == ["2026-11-07", "2026-11-08"]
+    assert [g.date for g in second] == ["2026-11-08"]
+    assert both[0].ticket is not None and both[0].ticket == second[0].ticket
+
+
+def test_a_page_with_no_json_ld_saves_nothing() -> None:
+    calls: list[str] = []
+    (gigs,) = expand_ranges(
+        whatson.WhatsonSource(),
+        "<html></html>",
+        "The Vaudeville Revue",
+        [("2026-11-07", "2026-11-08")],
+        calls,
+    )
+    assert gigs == []
+    assert not list(whatson.EVENTS.directory().glob("*.json"))

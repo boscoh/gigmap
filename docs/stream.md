@@ -51,11 +51,15 @@ A source splits a list read into two steps.
 
 ## The caches
 
-| Cache          | Content                          | Rule                                                                          |
-| -------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| `data/days/`   | the final `list[Gig]` of a range | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v11` in `gigmap/stores.py` |
-| `data/venues/` | each venue with its coordinates  | saved only with coordinates                                                   |
+| Cache          | Content                                        | Rule                                                                                      |
+| -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v11` in `gigmap/stores.py`             |
+| `data/venues/` | each venue with its coordinates                | saved only with coordinates                                                               |
+| `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` is `v1`. Bump it with any parser change |
 
+- `data/events/` serves the detail read of `expand` in beat (the time), artshub
+  (the `Schedule`) and whatson (the `WhatsonEvent`, shared with whatsonart). A
+  second range with the same events makes no detail read.
 - Warm: `CachedSource` loads the day file and skips `expand`.
 - Cold: the member streams `candidates` and `expand`. Then it saves the gigs
   in candidate order.
@@ -135,15 +139,15 @@ shows rows at the pace of its event pages.
 
 ## The failures
 
-| The failure                    | The result                                     |
-| ------------------------------ | ---------------------------------------------- |
-| every candidate read fails     | 502 with the first `SourceError`               |
-| one candidate read fails       | a log line. The member sends no line           |
-| a member fails after its total | a log line, `{"total": -r}`, the member stops  |
+| The failure                    | The result                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| every candidate read fails     | 502 with the first `SourceError`                                                   |
+| one candidate read fails       | a log line. The member sends no line                                               |
+| a member fails after its total | a log line, `{"total": -r}`, the member stops                                      |
 | `expand` gives a `SourceError` | artshub and beat keep the gig. beat leaves the time empty. whatson drops the event |
-| `expand` raises another error  | a log line, `{"total": -1}`, no day file save  |
-| an `expand` read fails         | `gig.time` is null                             |
-| a venue read fails             | `venue` is null, and `error` holds the text    |
+| `expand` raises another error  | a log line, `{"total": -1}`, no day file save                                      |
+| an `expand` read fails         | `gig.time` is null                                                                 |
+| a venue read fails             | `venue` is null, and `error` holds the text                                        |
 
 A `SourceError` text goes to the page. Any other venue error becomes the
 text "the venue lookup failed".

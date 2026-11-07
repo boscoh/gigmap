@@ -244,3 +244,47 @@ def test_expand_keeps_the_gig_when_the_page_read_fails() -> None:
 
 def test_expand_sets_the_time_from_the_schedule() -> None:
     assert [g.time for g in expand(PAGE, "2026-11-05")] == ["10:00am"]
+
+
+def expand_twice(
+    ranges: list[tuple[str, str]], calls: list[str]
+) -> list[list[sources.Gig]]:
+    """Run `expand` on one gig for each range, with one source and one fake read."""
+
+    async def run() -> list[list[sources.Gig]]:
+        source = artshub.ArtshubSource()
+
+        async def text(url: str, *_a: object, **_k: object) -> str:
+            calls.append(url)
+            return PAGE
+
+        source._text = text  # type: ignore[method-assign]
+        gig = sources.Gig(artist="X", detail_url=GIG_URL)
+        return [await source.expand(gig, s, e) for s, e in ranges]
+
+    return asyncio.run(run())
+
+
+def test_overlapping_ranges_share_one_page_read() -> None:
+    calls: list[str] = []
+    thursday, monday = expand_twice(
+        [("2026-11-05", "2026-11-05"), ("2026-11-02", "2026-11-05")], calls
+    )
+    assert calls == [GIG_URL]
+    assert [g.time for g in thursday] == ["10:00am"]
+    assert [g.time for g in monday] == ["10:00am"]
+
+
+def test_one_cached_schedule_fits_two_ranges_apart() -> None:
+    calls: list[str] = []
+    closed, open_ = expand_twice(
+        [("2026-11-02", "2026-11-02"), ("2026-11-05", "2026-11-05")], calls
+    )
+    assert closed == []
+    assert [g.time for g in open_] == ["10:00am"]
+    assert len(calls) == 1
+
+
+def test_a_failed_read_and_a_missing_page_save_nothing() -> None:
+    assert [g.time for g in expand(None)] == [None]
+    assert not artshub.EVENTS.path("x-1").exists()

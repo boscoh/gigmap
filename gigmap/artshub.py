@@ -67,8 +67,9 @@ from urllib.parse import quote, unquote, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
+from pydantic import TypeAdapter
 
-from gigmap import sources
+from gigmap import sources, stores
 from gigmap.logger import log_request
 from gigmap.schedule import extract_schedule, fit_dates
 
@@ -116,6 +117,9 @@ MAX_PAGES = 20
 PAGE_CONCURRENCY = 5
 # One pool for the whole app, so every request shares the limit.
 PAGE_POOL = asyncio.Semaphore(PAGE_CONCURRENCY)
+
+# The schedule of each event page, keyed by url. An empty one is an answer.
+EVENTS = stores.event_cache("artshub", TypeAdapter(sources.Schedule))
 
 # The site is behind Cloudflare. The feed and the event page answer a normal
 # request, so one browser fingerprint is enough. A challenge would answer a
@@ -396,14 +400,19 @@ class ArtshubSource:
         """
         if gig.detail_url is None or DETAIL_URL_RE.fullmatch(gig.detail_url) is None:
             return [gig]
-        try:
-            async with PAGE_POOL:
-                page = await self._text(gig.detail_url)
-        except sources.SourceError as error:
-            LOGGER.warning("cannot read %s: %s", gig.detail_url, error)
-            return [gig]
-        body, reference = parse_event_page(page or "")
-        schedule = extract_schedule(body, reference)
+        key = sources.url_key(gig.detail_url)
+        schedule = EVENTS.load(key)
+        if schedule is None:
+            try:
+                async with PAGE_POOL:
+                    page = await self._text(gig.detail_url)
+            except sources.SourceError as error:
+                LOGGER.warning("cannot read %s: %s", gig.detail_url, error)
+                return [gig]
+            body, reference = parse_event_page(page or "")
+            schedule = extract_schedule(body, reference)
+            if page is not None:
+                EVENTS.save(key, schedule)
         keep, time = fit_dates(schedule, start_date, end_date)
         return [gig.model_copy(update={"time": time})] if keep else []
 

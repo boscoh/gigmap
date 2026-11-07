@@ -96,8 +96,9 @@ from urllib.parse import quote, unquote, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
+from pydantic import BaseModel, TypeAdapter
 
-from gigmap import sources
+from gigmap import sources, stores
 from gigmap.logger import log_request
 
 SITE_URL = "https://whatson.melbourne.vic.gov.au"
@@ -148,6 +149,7 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 DETAIL_CONCURRENCY = 3
 # One pool for the whole app, so every request shares the limit.
 DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
+
 
 PRICE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 # The session day text has no year, for example `Sat 2 Jan`. The module reads
@@ -339,20 +341,17 @@ def time_text(value: object) -> str | None:
     return f"{hour}:{minute}{meridiem}" if minute else f"{hour}{meridiem}"
 
 
-def parse_sessions(soup, start_date: str, end_date: str) -> list[tuple[str, str | None]]:
-    """Return the session days of one event page that fall in the range.
+def parse_sessions(soup) -> list[tuple[str, str | None]]:
+    """Return the session days of one event page, as raw pairs.
 
-    Each result is a pair of the date and the first start time of that day. A
-    day with two sessions keeps only the first.
+    Each result is a pair of the day text and the first start time of that
+    day. The day text has no year, so the range is applied later by
+    `fit_event`. A day with two sessions keeps only the first time.
     """
     sessions: list[tuple[str, str | None]] = []
     for row in soup.select("table#date-times-table tr"):
         header = row.find("th")
         if header is None:
-            continue
-        day_text = header.get_text(" ", strip=True)
-        dates = session_dates(day_text, start_date, end_date)
-        if not dates:
             continue
         # The first li of the day holds the first start time.
         first_time: str | None = None
@@ -362,8 +361,7 @@ def parse_sessions(soup, start_date: str, end_date: str) -> list[tuple[str, str 
             if candidate is not None:
                 first_time = candidate
                 break
-        for day_value in dates:
-            sessions.append((day_value, first_time))
+        sessions.append((header.get_text(" ", strip=True), first_time))
     return sessions
 
 
@@ -442,60 +440,96 @@ def parse_ticket(page: str) -> sources.Ticket | None:
     )
 
 
-def parse_event(page: str, card: sources.Gig, start_date: str, end_date: str) -> list[sources.Gig]:
-    """Return the gigs of one event page that fall in the date range.
+class WhatsonEvent(BaseModel):
+    """The range-free parse of one event page."""
 
-    One gig is emitted for each session day that falls inside the range. The
-    card holds the title, the url, the categories, and the image; the page
-    holds the run window, the venue, and the sessions.
-    """
+    venue_name: str | None
+    street: str | None
+    locality: str | None
+    postal: str | None
+    run_start: str
+    run_end: str
+    image: str | None
+    ticket: sources.Ticket | None
+    sessions: list[tuple[str, str | None]]
+
+
+# The range-free parse of each event page, keyed by url. whatsonart shares it.
+EVENTS = stores.event_cache("whatson", TypeAdapter(WhatsonEvent))
+
+
+def read_event(page: str) -> WhatsonEvent | None:
+    """Return the range-free parse of one event page, or None with no JSON-LD."""
     soup = BeautifulSoup(page, "lxml")
     data = json_ld_data(soup)
+    if data is None:
+        return None
     venue_name = None
     address = None
-    if data is not None:
-        location = data.get("location")
-        if isinstance(location, dict):
-            venue_name = text(location.get("name"))
-            addr = location.get("address")
-            if isinstance(addr, dict):
-                address = addr
-    if data is None:
-        return []
+    location = data.get("location")
+    if isinstance(location, dict):
+        venue_name = text(location.get("name"))
+        addr = location.get("address")
+        if isinstance(addr, dict):
+            address = addr
     run_start = text(data.get("startDate")) or ""
-    run_end = text(data.get("endDate")) or run_start
-    image = data.get("image") if isinstance(data, str) else None
-    street = None
-    locality = None
-    postal = None
-    if isinstance(address, dict):
+    street = locality = postal = None
+    if address is not None:
         street = text(address.get("streetAddress"))
         locality = text(address.get("addressLocality"))
         postal = text(address.get("postalCode"))
-    venue = venue_name or (street or locality)
-    ticket = parse_ticket(page)
-    sessions = parse_sessions(soup, start_date, end_date)
+    return WhatsonEvent(
+        venue_name=venue_name,
+        street=street,
+        locality=locality,
+        postal=postal,
+        run_start=run_start,
+        run_end=text(data.get("endDate")) or run_start,
+        image=data.get("image") if isinstance(data, str) else None,
+        ticket=parse_ticket(page),
+        sessions=parse_sessions(soup),
+    )
+
+
+def fit_event(
+    event: WhatsonEvent, card: sources.Gig, start_date: str, end_date: str
+) -> list[sources.Gig]:
+    """Return one gig for each session day that falls inside the range.
+
+    The card holds the title, the url, the categories, and the image; the
+    event holds the run window, the venue, and the sessions.
+    """
+    venue = event.venue_name or (event.street or event.locality)
     gigs = []
-    for day_value, first_time in sessions:
-        # The search filter is coarse, so the year and the range of the run
-        # are re-checked here against the real session day.
-        if not (run_start <= day_value <= run_end):
-            continue
-        gigs.append(
-            sources.Gig(
-                artist=card.artist,
-                detail_url=card.detail_url,
-                date=day_value,
-                venue=venue,
-                venue_url=venue_url(venue_name, street, locality, postal),
-                categories=list(card.categories),
-                ticket=ticket,
-                image_url=absolute_url(image) or card.image_url,
-                image_alt=card.image_alt,
-                time=first_time,
+    for day_text, first_time in event.sessions:
+        for day_value in session_dates(day_text, start_date, end_date):
+            # The search filter is coarse, so the year and the range of the run
+            # are re-checked here against the real session day.
+            if not (event.run_start <= day_value <= event.run_end):
+                continue
+            gigs.append(
+                sources.Gig(
+                    artist=card.artist,
+                    detail_url=card.detail_url,
+                    date=day_value,
+                    venue=venue,
+                    venue_url=venue_url(
+                        event.venue_name, event.street, event.locality, event.postal
+                    ),
+                    categories=list(card.categories),
+                    ticket=event.ticket,
+                    image_url=absolute_url(event.image) or card.image_url,
+                    image_alt=card.image_alt,
+                    time=first_time,
+                )
             )
-        )
     return gigs
+
+
+def parse_event(page: str, card: sources.Gig, start_date: str, end_date: str) -> list[sources.Gig]:
+    """Return the gigs of one event page that fall in the date range."""
+    event = read_event(page)
+    return [] if event is None else fit_event(event, card, start_date, end_date)
 
 
 class WhatsonSource:
@@ -606,13 +640,20 @@ class WhatsonSource:
         so a source error drops this event only and is logged.
         """
         url = gig.detail_url or ""
-        try:
-            async with DETAIL_POOL:
-                body = await self._text(url)
-        except sources.SourceError as error:
-            LOGGER.warning("skip the event page %s: %s", url, error)
-            return []
-        return parse_event(body, gig, start_date, end_date)
+        key = sources.url_key(url)
+        event = EVENTS.load(key)
+        if event is None:
+            try:
+                async with DETAIL_POOL:
+                    body = await self._text(url)
+            except sources.SourceError as error:
+                LOGGER.warning("skip the event page %s: %s", url, error)
+                return []
+            event = read_event(body)
+            if event is None:
+                return []
+            EVENTS.save(key, event)
+        return fit_event(event, gig, start_date, end_date)
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

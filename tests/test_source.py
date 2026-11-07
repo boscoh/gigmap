@@ -833,3 +833,37 @@ def test_the_venue_read_holds_the_beat_pool(monkeypatch: pytest.MonkeyPatch) -> 
     asyncio.run(source.venue(VENUE_URL))
 
     assert seen == [True]
+
+
+def beat_expand(html: Any, calls: list[str]) -> list[sources.Gig]:
+    source = beat.BeatSource()
+
+    async def fake(url: str, params: dict[str, str] | None = None) -> str:
+        calls.append(url)
+        if isinstance(html, Exception):
+            raise html
+        return html
+
+    source._html = fake  # type: ignore[method-assign]
+    return asyncio.run(source.expand(_bare_gig(), "2026-10-01", "2026-10-02"))
+
+
+def test_a_second_expand_makes_no_beat_read() -> None:
+    calls: list[str] = []
+    first = beat_expand(DETAIL_HTML, calls)
+    second = beat_expand(DETAIL_HTML, calls)
+    assert [g.time for g in first] == [g.time for g in second] == ["8:30pm"]
+    assert len(calls) == 1
+
+
+def test_a_beat_page_with_no_time_caches_an_empty_string() -> None:
+    calls: list[str] = []
+    assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
+    assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
+    assert len(calls) == 1
+    assert beat.EVENTS.load("act") == ""
+
+
+def test_a_beat_source_error_saves_no_event_file() -> None:
+    beat_expand(sources.SourceError("down"), [])
+    assert not beat.EVENTS.path("act").exists()

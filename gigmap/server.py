@@ -28,12 +28,12 @@ from fastapi.responses import (
 
 from gigmap import artscentre, artshub, beat, fringe, sources, stores, whatson, whatson_art
 from gigmap.logger import log_incoming, log_kv, setup_logging
+from gigmap.stores import DATA_DIR_ENV, data_dir
 
 LOGGER = logging.getLogger(__name__)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PACKAGE_DIR.parent
-DATA_DIR_ENV = "GIGMAP_DATA_DIR"
 SOURCE_TITLE_TOKEN = "__SOURCE_TITLE__"
 SOURCE_INFO_TOKEN = "__SOURCE_INFO__"
 SOURCE_API_BASE_TOKEN = "__API_BASE__"
@@ -237,12 +237,6 @@ MembersDep = Annotated[dict[str, stores.CachedGigSource], Depends(source_depende
 @app.exception_handler(sources.SourceError)
 async def source_error(_: Request, error: sources.SourceError) -> JSONResponse:
     return JSONResponse(status_code=502, content={"detail": str(error)})
-
-
-def data_dir() -> Path:
-    directory = Path(os.environ.get(DATA_DIR_ENV, ROOT_DIR / "data")).expanduser()
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
 
 
 def validate_dates(start_date: str, end_date: str) -> None:
@@ -589,6 +583,7 @@ def run_cleanup(
         verb,
         days=report.days,
         stale=report.stale,
+        events=report.events,
         size=format_size(report.size),
     )
     if report.skipped:

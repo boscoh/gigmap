@@ -15,8 +15,9 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
+from pydantic import TypeAdapter
 
-from gigmap import sources
+from gigmap import sources, stores
 from gigmap.logger import log_request
 
 BEAT_URL = "https://beat.com.au/gig-guide/"
@@ -73,6 +74,9 @@ RETRY_DELAY_SECONDS = 1.0
 DETAIL_CONCURRENCY = 5
 # One pool for the whole app, so every request shares the limit.
 DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
+
+# The time of each detail page, keyed by url. "" means the page has no time.
+EVENTS = stores.event_cache("beat", TypeAdapter(str))
 
 LOGGER = logging.getLogger(__name__)
 
@@ -335,13 +339,18 @@ class BeatSource:
         url = gig.detail_url or ""
         if gig.time or DETAIL_URL_RE.fullmatch(url) is None:
             return [gig]
-        try:
-            async with DETAIL_POOL:
-                html = await self._html(url)
-        except sources.SourceError as error:
-            LOGGER.warning("skip the detail page %s: %s", url, error)
-            return [gig]
-        return [gig.model_copy(update={"time": parse_gig_detail(html)})]
+        key = sources.url_key(url)
+        time_text = EVENTS.load(key)
+        if time_text is None:
+            try:
+                async with DETAIL_POOL:
+                    html = await self._html(url)
+            except sources.SourceError as error:
+                LOGGER.warning("skip the detail page %s: %s", url, error)
+                return [gig]
+            time_text = parse_gig_detail(html) or ""
+            EVENTS.save(key, time_text)
+        return [gig.model_copy(update={"time": time_text or None})]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

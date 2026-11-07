@@ -166,3 +166,30 @@ def test_a_bad_loop_iteration_does_not_stop_the_loop(
 
     assert len(calls) >= 2
     assert "cleanup failed" in caplog.text
+
+
+def clean_events(dry_run: bool) -> stores.CleanReport:
+    return stores.DataStores(stores.data_dir).clean(time.time(), dry_run=dry_run)
+
+
+def test_the_cleanup_removes_only_the_old_event_files(data_dir: Path) -> None:
+    version = stores.EVENTS_VERSION
+    old = write(data_dir / "events" / f"beat_{version}_a.json", 8 * 86400)
+    fresh = write(data_dir / "events" / f"beat_{version}_b.json", 0)
+    older_version = write(data_dir / "events" / "beat_v0_c.json", 0)
+    unknown = write(data_dir / "events" / "notes.json", 8 * 86400)
+
+    report = clean_events(dry_run=False)
+
+    assert report.events == 2
+    assert not old.exists() and not older_version.exists()
+    assert fresh.exists() and unknown.exists()
+
+
+def test_the_dry_run_keeps_the_event_files(data_dir: Path) -> None:
+    old = write(data_dir / "events" / f"beat_{stores.EVENTS_VERSION}_a.json", 8 * 86400)
+
+    report = clean_events(dry_run=True)
+
+    assert report.events == 1
+    assert old.exists()

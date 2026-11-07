@@ -13,8 +13,10 @@ The data
 
     * `data/days/gigmap_<source>_<version>_<start>_<end>.json` - the parsed
       gig list for one date range
-    * `data/venues/<source>_<slug>.json` - the name, the address, and the
-      coordinates of one venue
+    * `data/events/<source>_<version>_<key>.json` - the range-free parse of
+      one event page, so a second range shares the read
+    * `data/venues/<source>_<version>_<slug>.json` - the name, the address,
+      and the coordinates of one venue
 
     An old `data/gigs/` tree is removed by the cleanup. The app writes no
     gig file now, because each source reads the time of its own gigs.
@@ -37,11 +39,19 @@ the app must not serve it. `DAYS_VERSION` names the shape, and every day
 file carries it. Raise the number with such a change. The app then ignores
 each file of the older number, and the cleanup removes it.
 
+An event file holds the range-free parse of one page. A change to that
+parse makes the file wrong, so the app must not serve it. `EVENTS_VERSION`
+names that shape. Raise the number with such a change, and the cleanup
+removes each file of an older number.
+
 The retention rules
     * A day file: remove when the range end date is before today. The
       calendar blocks a past day, so the app cannot ask for the file again.
       The rule uses the date in the file name. A file with an unknown name
       stays.
+    * An event file: remove when it is older than `EVENTS_CACHE_SECONDS`
+      (7 days), or when its version is not `EVENTS_VERSION`. A parse is
+      cheap to read again, so the file has no other claim.
     * A venue file: keep. The Nominatim policy needs the cache. The server
       must not ask again for a venue with coordinates.
 
@@ -82,11 +92,23 @@ from pydantic import TypeAdapter
 
 from gigmap import geocode, sources
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR_ENV = "GIGMAP_DATA_DIR"
+
+
+def data_dir() -> Path:
+    """Return the data directory. Read the environment on each call."""
+    directory = Path(os.environ.get(DATA_DIR_ENV, ROOT_DIR / "data")).expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 # The day files stay fresh for this time. The cleanup keeps the files
 # younger than this value, so both rules must use the same number.
 DAYS_CACHE_SECONDS = 3 * 3600
 
 DAYS_SUBDIR = "days"
+EVENTS_SUBDIR = "events"
 VENUES_SUBDIR = "venues"
 
 # A directory of an older layout. The cleanup removes the whole tree.
@@ -97,6 +119,14 @@ STALE_SUBDIRS = ("gigs",)
 # app then ignores each day file of the older number, and the cleanup
 # removes it on the usual rules.
 DAYS_VERSION = "v11"
+
+# The shape of a cached event parse. Raise this number with any change to
+# a parse that a source caches, because a cached value never sees a parser
+# fix. The cleanup removes each event file of an older number.
+EVENTS_VERSION = "v1"
+
+# An event file stays fresh for this time. The cleanup uses the same number.
+EVENTS_CACHE_SECONDS = 7 * 86400
 
 # The venue files carry a version too, because the cleanup never removes
 # them. Raise it when a venue read or the geocode query changes.
@@ -113,6 +143,9 @@ DAY_FILE_RE = re.compile(
     r"(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})\.json"
 )
 
+# The event files are named <source>_<version>_<key>.json.
+EVENT_FILE_RE = re.compile(r"(?P<source>[a-z0-9]+)_(?P<version>v[0-9]+)_.+\.json")
+
 M = TypeVar("M")
 
 
@@ -120,6 +153,7 @@ class CleanReport(NamedTuple):
     """The count of the files that the cleanup removed."""
 
     days: int
+    events: int
     stale: int
     size: int
     skipped: int
@@ -219,6 +253,17 @@ class JsonCache(Generic[M]):
             return False
 
 
+def event_cache(source: str, adapter: TypeAdapter[M]) -> JsonCache[M]:
+    """Return the cache of the range-free parse of one source's event pages."""
+    return JsonCache(
+        data_dir,
+        EVENTS_SUBDIR,
+        adapter,
+        filename=lambda key: f"{source}_{EVENTS_VERSION}_{key}.json",
+        max_age=EVENTS_CACHE_SECONDS,
+    )
+
+
 class DataStores:
     """The three JSON caches of one data directory, and its cleanup."""
 
@@ -264,6 +309,10 @@ class DataStores:
                 if end < today and age(path) >= DAYS_CACHE_SECONDS:
                     remove(path)
 
+            for path in data/events/<source>_<version>_*.json:
+                if age(path) >= EVENTS_CACHE_SECONDS or version != EVENTS_VERSION:
+                    remove(path)
+
             # data/venues/*.json is never touched
 
             for name in STALE_SUBDIRS:
@@ -283,6 +332,7 @@ class DataStores:
         """
         today = datetime.fromtimestamp(now).date().isoformat()
         day_count = 0
+        event_count = 0
         size = 0
         stale = 0
         skipped = 0
@@ -303,7 +353,24 @@ class DataStores:
             size += remove_file(path, dry_run)
             day_count += 1
 
-        return CleanReport(days=day_count, stale=stale, size=size, skipped=skipped)
+        for path in sorted((self._root() / EVENTS_SUBDIR).glob("*.json")):
+            match = EVENT_FILE_RE.fullmatch(path.name)
+            if match is None:
+                continue
+            if match.group("version") == EVENTS_VERSION and not old_enough(
+                path, now, EVENTS_CACHE_SECONDS
+            ):
+                continue
+            size += remove_file(path, dry_run)
+            event_count += 1
+
+        return CleanReport(
+            days=day_count,
+            events=event_count,
+            stale=stale,
+            size=size,
+            skipped=skipped,
+        )
 
 
 class CachedGigSource(sources.GigSource, Protocol):
