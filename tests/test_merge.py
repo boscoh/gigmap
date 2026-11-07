@@ -98,12 +98,17 @@ def test_a_failed_member_is_left_out() -> None:
     assert artists(lines) == ["b.test"]
 
 
-def test_the_read_fails_when_every_member_fails() -> None:
+def test_every_failed_member_lands_in_the_done_line() -> None:
     members = {"a": Member("a.test", fail=True), "b": Member("b.test", fail=True)}
 
-    with pytest.raises(sources.SourceError):
-        asyncio.run(stream(members))
+    lines = asyncio.run(stream(members))
 
+    assert artists(lines) == []
+    failed = [one for one in lines if "failed" in one and "done" not in one]
+    assert sorted(one["source"] for one in failed) == ["a", "b"]
+    done = lines[-1]
+    assert done["done"] is True
+    assert sorted(one["source"] for one in done["failed"]) == ["a", "b"]
 
 def test_the_all_page_and_reads_are_served() -> None:
     assert server.page_source_name("/gigs/") == "gigs"
