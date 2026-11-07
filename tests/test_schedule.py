@@ -42,6 +42,8 @@ CASES = [
      None, [H([0, 1, 2, 3, 4], "09:00", "17:00"), H([5], "10:00", "14:00")], None, None),
     ("Monday to Friday 10-5pm", None, [H([0, 1, 2, 3, 4], "10:00", "17:00")], None, None),
     ("Saturday 1 to 4 pm", None, [H([5], "13:00", "16:00")], None, None),
+    ("Open 10am - 10am daily", None, [], None, None),
+    ("Open 12am - 12am, Monday to Friday", None, [], None, None),
     ("from January 24 to 28", date(2027, 1, 1), [], "2027-01-24", "2027-01-28"),
     ("from 28 April to 3 March 2025", None, [], None, None),
     ("30 February to 2 March 2026", None, [], None, None),

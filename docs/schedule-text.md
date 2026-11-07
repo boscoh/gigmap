@@ -74,6 +74,9 @@ The token patterns and the design are in `docs/specs/2026-11-05-artshub-schedule
   more, the reader takes 12 hours off the start, and gets 10:00 to 14:00.
 - **Midnight and noon.** `hour % 12` gives 12am = 0 and 12pm = 12. A minute
   over 59 or an hour over 23 gives no time.
+- **A span of 24 hours gives no clock.** `10am - 10am` has one start and one
+  end, so the run never closes inside the day. The reader drops the span, and
+  the gig shows no time.
 - **`every` binds to the next day.** `Every Wednesday 14 October` states a
   day and then a start date. The date must not reset the day group.
 - **A one-off sentence holds a real weekday.** `Saturday 14 November, 1 to

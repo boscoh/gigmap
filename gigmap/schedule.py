@@ -68,6 +68,8 @@ def _pair(match: re.Match[str]) -> tuple[str, str] | None:
         return None
     if inherited and start >= end and start[0] >= 12:
         start = (start[0] - 12, start[1])
+    if start == end:
+        return None  # a span of 24 hours, so the text gives no clock
     return "%02d:%02d" % start, "%02d:%02d" % end
 
 
