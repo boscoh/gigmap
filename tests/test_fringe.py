@@ -154,7 +154,7 @@ class FakeSite:
     def read_gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
         async def run() -> list[sources.Gig]:
             async with fringe.FringeSource(self.transport()) as source:
-                return await source.gigs(start_date, end_date)
+                return await source.candidates(start_date, end_date)
 
         return asyncio.run(run())
 
@@ -519,8 +519,8 @@ def test_the_event_list_reads_one_time_for_the_process() -> None:
 
     async def run() -> None:
         async with fringe.FringeSource(site.transport()) as source:
-            await source.gigs("2026-10-17", "2026-10-18")
-            await source.gigs("2026-10-17", "2026-10-18")
+            await source.candidates("2026-10-17", "2026-10-18")
+            await source.candidates("2026-10-17", "2026-10-18")
 
     asyncio.run(run())
 
@@ -574,8 +574,8 @@ def test_the_source_reads_the_venue_list_one_time() -> None:
 
     async def run() -> None:
         async with fringe.FringeSource(site.transport()) as source:
-            await source.gigs("2026-10-17", "2026-10-18")
-            await source.gigs("2026-10-17", "2026-10-18")
+            await source.candidates("2026-10-17", "2026-10-18")
+            await source.candidates("2026-10-17", "2026-10-18")
 
     asyncio.run(run())
 
@@ -628,31 +628,6 @@ def test_a_foreign_venue_url_is_rejected() -> None:
         read_venue("https://www.melbournefringe.com.au/whats-on/events/x/", site)
 
 
-def test_the_detail_read_leaves_the_time_empty() -> None:
-    """The gig list holds the time, so the detail read must not replace it."""
-    site = FakeSite()
-
-    async def run() -> sources.GigDetail | None:
-        async with fringe.FringeSource(site.transport()) as source:
-            return await source.gig_detail(EVENT_URL)
-
-    detail = asyncio.run(run())
-
-    assert detail is not None
-    assert detail.time is None
-    assert site.calls == []
-
-
-def test_a_foreign_detail_url_answers_none() -> None:
-    site = FakeSite()
-
-    async def run() -> sources.GigDetail | None:
-        async with fringe.FringeSource(site.transport()) as source:
-            return await source.gig_detail("https://beat.com.au/act/")
-
-    assert asyncio.run(run()) is None
-
-
 def test_the_page_read_holds_one_entry_for_each_day() -> None:
     site = FakeSite()
     site.days = {"2026-10-17": day(diary_row())}
@@ -682,7 +657,7 @@ def test_the_source_retries_a_server_error() -> None:
 
     async def run() -> list[sources.Gig]:
         async with fringe.FringeSource(httpx.MockTransport(handle)) as source:
-            return await source.gigs("2026-10-17", "2026-10-17")
+            return await source.candidates("2026-10-17", "2026-10-17")
 
     gigs = asyncio.run(run())
 
@@ -699,7 +674,7 @@ def test_the_source_does_not_retry_a_client_error() -> None:
 
     async def run() -> None:
         async with fringe.FringeSource(httpx.MockTransport(handle)) as source:
-            await source.gigs("2026-10-17", "2026-10-17")
+            await source.candidates("2026-10-17", "2026-10-17")
 
     with pytest.raises(sources.SourceError):
         asyncio.run(run())
@@ -712,7 +687,7 @@ def test_a_damaged_answer_stops_the_read() -> None:
 
     async def run() -> None:
         async with fringe.FringeSource(httpx.MockTransport(handle)) as source:
-            await source.gigs("2026-10-17", "2026-10-17")
+            await source.candidates("2026-10-17", "2026-10-17")
 
     with pytest.raises(sources.SourceError):
         asyncio.run(run())
@@ -720,7 +695,7 @@ def test_a_damaged_answer_stops_the_read() -> None:
 
 def test_the_source_needs_the_context_manager() -> None:
     async def run() -> None:
-        await fringe.FringeSource().gigs("2026-10-17", "2026-10-17")
+        await fringe.FringeSource().candidates("2026-10-17", "2026-10-17")
 
     with pytest.raises(RuntimeError):
         asyncio.run(run())

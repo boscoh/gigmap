@@ -132,9 +132,6 @@ VENUE_URL_HINT = (
     "venue_url must have the form "
     "https://www.artscentremelbourne.com.au/venue/<name>/"
 )
-DETAIL_URL_RE = re.compile(
-    r"https://www\.artscentremelbourne\.com\.au/(?P<path>[^?#]+)/?"
-)
 VENUE_PATH_PREFIX = "/venue/"
 
 # The site answers a normal client, so one browser fingerprint is enough.
@@ -454,23 +451,18 @@ class ArtsCentreSource:
             f"artscentremelbourne.com.au answered status {status}"
         )
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs of a date range."""
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        """Return the candidates of a date range."""
         gigs = []
         for first, last in window_ends(start_date, end_date):
             gigs.extend(await self._read_window(first, last))
         return gigs
 
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        """Return the detail of one event.
-
-        The calendar holds the time of the day, so the read adds no time and
-        makes no request. The event page holds the sold-out state and the
-        price, and it costs one slow read for each event.
-        """
-        if DETAIL_URL_RE.fullmatch(detail_url) is None:
-            return None
-        return sources.GigDetail(detail_url=detail_url)
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        """Give the gig back. The list row holds its time."""
+        return [gig]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

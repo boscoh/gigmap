@@ -407,29 +407,6 @@ class ArtshubSource:
         keep, time = fit_dates(schedule, start_date, end_date)
         return [gig.model_copy(update={"time": time})] if keep else []
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs that are open in a date range.
-
-        The feed holds a date range for each event. The page of each event
-        holds its days and hours. A gig leaves the list when none of the
-        chosen dates is one of its days. Its time is its opening time.
-        """
-        feed = await self.candidates(start_date, end_date)
-        expanded = await asyncio.gather(
-            *(self.expand(gig, start_date, end_date) for gig in feed)
-        )
-        return [gig for gigs in expanded for gig in gigs]
-
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        """Return the detail of one event.
-
-        The time is in the gig list, so the read adds nothing and makes no
-        request.
-        """
-        if DETAIL_URL_RE.fullmatch(detail_url) is None:
-            return None
-        return sources.GigDetail(detail_url=detail_url)
-
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""
         decoded = decode_venue(venue_url)

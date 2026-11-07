@@ -121,13 +121,6 @@ class Schedule(BaseModel):
     hours: list[Hours] = Field(default_factory=list)
 
 
-class GigDetail(BaseModel):
-    """The detail of one gig. That is the start time."""
-
-    detail_url: str
-    time: str | None = None
-
-
 class Venue(BaseModel):
     """The address data of one venue, with the geocode.
 
@@ -143,16 +136,23 @@ class Venue(BaseModel):
 
 
 class GigSource(Protocol):
-    """The data that the server reads from a gig source."""
+    """The data that the server reads from a gig source.
+
+    Each source holds the three reads below. A source whose list row holds the
+    time gives the gig back unchanged from `expand`. `docs/stream.md`
+    holds the rule.
+    """
 
     # pi-lens-ignore: no-ellipsis-body
-    async def gigs(self, start_date: str, end_date: str) -> list[Gig]:
-        """Return the gigs of a date range."""
+    async def candidates(self, start_date: str, end_date: str) -> list[Gig]:
+        """Return the gigs of a date range. `expand` may refine each one."""
         ...
 
     # pi-lens-ignore: no-ellipsis-body
-    async def gig_detail(self, detail_url: str) -> GigDetail | None:
-        """Return the detail of one gig. None when the read fails."""
+    async def expand(
+        self, gig: Gig, start_date: str, end_date: str
+    ) -> list[Gig]:
+        """Return the gigs of one event. One row can give many events."""
         ...
 
     # pi-lens-ignore: no-ellipsis-body
@@ -160,23 +160,6 @@ class GigSource(Protocol):
         """Return the address data of one venue."""
         ...
 
-
-class ExpandingSource(GigSource, Protocol):
-    """A gig source that splits its list read into `candidates` and `expand`.
-
-    A source with no `expand` is the identity case: `candidates` is `gigs`
-    and `expand` gives `[gig]`. The server finds out with `getattr`.
-    """
-
-    # pi-lens-ignore: no-ellipsis-body
-    async def candidates(self, start_date: str, end_date: str) -> list[Gig]:
-        """Return the gigs known after the reads before any per-event read."""
-        ...
-
-    # pi-lens-ignore: no-ellipsis-body
-    async def expand(self, gig: Gig, start_date: str, end_date: str) -> list[Gig]:
-        """Read one event. Return zero, one or many gigs."""
-        ...
 
 
 class SourcePool(Protocol):

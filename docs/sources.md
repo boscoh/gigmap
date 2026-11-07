@@ -55,14 +55,14 @@ no price. The detail pages hold no price field and no booking link either;
 ## The rules
 
 - Read the feed, not the search page. No date parameter works, and the site
-  ignores an unknown query key without a message. `gigs()` sends
+  ignores an unknown query key without a message. `candidates()` sends
   `location=melbourne` and then checks the `locations` tag again.
 - The module always answers `time=None`. The stamp holds a start time and an
   end time, but the site does not show them as the time of the show. Most
   stamps are an arbitrary time or `00:00:00`. The module reads the day only.
 - Drop an item that has no `startDateTime`. Eight items are like this, and
   such an item cannot fall in a date range.
-- `gig_detail()` makes no request. The feed holds nothing more to report.
+- No per-gig read gives more than the feed. `candidates()` is the whole read.
 - The venue url has the form `/venue/<name>/<address>/`. `sources.url_key`
   takes the last part of the path, so the address is the key of the cache
   file. `venue()` reads the name and the address from the url and makes no
@@ -101,11 +101,11 @@ prose states no weekly schedule, so all six rows hold ArtsHub page text.
 - A gig with no readable page, or no schedule, stays with no time.
 
 The list waits for the page reads. `CachedSource` keeps the answer for the date
-range. `gig_detail` makes no request.
+range.
 
-Deploy note: `DAYS_VERSION` is now `v10`, because an old cached day list holds
-no filter. The server ignores the old day files, and the clean command removes
-them.
+Deploy note: `DAYS_VERSION` is now `v11`. The day file holds the time of each
+gig, and the old gig time cache is gone. The server ignores the old day files,
+and the clean command removes them.
 
 # Arts Centre Melbourne
 
@@ -178,7 +178,7 @@ The calendar holds no price, no sold-out state, no `image_alt`, no
 | One row becomes one gig | The rule keeps "what is on tonight" correct, and it matches `fringe.py` |
 | Skip Exhibition and Guided Tour | They are 59% of the rows, one for each open day. The set `EXCLUDED_CATEGORIES` holds the rule, and one edit restores them |
 | Read in windows of 170 days | The endpoint stops at 180 days from `StartDate` without a message |
-| `gig_detail()` makes no request | The calendar holds the time. The price and the sold-out state sit on the event page, at one slow read for each gig |
+| The calendar row holds the time | No per-gig read. The price and the sold-out state sit on the event page, and the app does not read it |
 | Report a ticket only for a real address or a real note | A "Book tickets" badge that does nothing misleads. 97 of 133 gigs hold no ticket |
 | Hold the street address in `VENUE_ADDRESSES` | The calendar holds no venue link, and a venue page is slow behind Imperva. The table gives the geocoder an address without a read |
 

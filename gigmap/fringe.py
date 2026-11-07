@@ -78,9 +78,8 @@ The shapes
 
 One gig is one performance, not one event. The site has no page for one
 performance, so every performance of an event carries the same `detail_url`.
-The time comes from the DailyDiary row, so `gigs` fills the `time` field
-itself. `gig_detail` leaves the time empty, because the server must keep the
-time of the list.
+The time comes from the DailyDiary row, so `candidates` fills the `time`
+itself.
 
 The times
 
@@ -809,8 +808,8 @@ class FringeSource:
         )
         return json.dumps(payloads)
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs of a date range. One gig is one performance."""
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        """Return the candidates of a date range. One gig is one performance."""
         days = days_of_range(start_date, end_date)
         payloads = await gather_limited(
             [lambda day=day: self._diary(day) for day in days],
@@ -829,17 +828,11 @@ class FringeSource:
             key=lambda gig: (gig.date or "", time_order(gig.time), gig.artist or ""),
         )
 
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        """Return the detail of one event.
-
-        The site has no page for one performance, and the diary read already
-        holds the time. The time stays empty, so the server keeps the time of
-        the gig list.
-        """
-        path = site_path(detail_url)
-        if path is None or EVENT_PATH_RE.search(path) is None:
-            return None
-        return sources.GigDetail(detail_url=detail_url)
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        """Give the gig back. One diary row holds one performance."""
+        return [gig]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

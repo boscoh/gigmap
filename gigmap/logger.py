@@ -187,9 +187,11 @@ class ShortLevelHandler(RichHandler):
     def emit(self, record: logging.LogRecord) -> None:
         """Print a block, with a long value wrapped at the value column."""
         message = record.getMessage()
+        # `format_kv` sets this field, so the lines of its block hold markup.
+        markup = getattr(record, "markup", False)
         # Only our own blocks have a key column, so any other message, and any
         # message with a traceback, goes through the log renderer.
-        if record.exc_info or "\n" not in message or not getattr(record, "markup", False):
+        if record.exc_info or "\n" not in message or not markup:
             super().emit(record)
             return
         lines = message.splitlines()
@@ -199,7 +201,6 @@ class ShortLevelHandler(RichHandler):
         # The log renderer puts every line of a message at the message column,
         # so the field lines are printed here, where a long value can wrap
         # under its own first character.
-        markup = getattr(record, "markup", False)
         room = self.console.width - VALUE_COL
         for line in lines[1:]:
             text = Text.from_markup(line) if markup else Text(line)

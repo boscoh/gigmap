@@ -39,20 +39,21 @@ A source splits a list read into two steps.
 
 - Each origin has one pool at module scope. Every request of the app shares
   it (D8). artshub uses `PAGE_CONCURRENCY` (5). whatson uses
-  `DETAIL_CONCURRENCY` (3). fringe uses `REQUEST_CONCURRENCY` (8). The server
-  detail pool and venue pool are 5 each.
-- On a `SourceError`, `expand` logs it. artshub keeps the gig. whatson gives
-  `[]`.
-- A source with no `expand` is the identity. `candidates` is `gigs`, and
-  `expand` gives `[gig]`. The server uses `getattr`.
-- beat, artscentre and fringe need no `expand`.
+  `DETAIL_CONCURRENCY` (3). beat uses `DETAIL_CONCURRENCY` (5). fringe uses
+  `REQUEST_CONCURRENCY` (8). The server venue pool is 5, and the server holds
+  no detail pool.
+- On a `SourceError`, `expand` logs it. artshub and beat keep the gig, and
+  beat leaves its time empty. whatson gives `[]`.
+- Every source holds `candidates`, `expand` and `venue`, as `sources.GigSource`
+  states. artshub, beat and whatson read the event in `expand`. Beat gives
+  `[gig]` always, with the time of the detail page. artscentre and fringe
+  give `[gig]` at once, because their list row holds the time.
 
 ## The caches
 
 | Cache          | Content                          | Rule                                                                          |
 | -------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| `data/days/`   | the final `list[Gig]` of a range | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v10` in `gigmap/stores.py` |
-| `data/gigs/`   | the start time of each gig       | kept                                                                          |
+| `data/days/`   | the final `list[Gig]` of a range | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v11` in `gigmap/stores.py` |
 | `data/venues/` | each venue with its coordinates  | saved only with coordinates                                                   |
 
 - Warm: `CachedSource` loads the day file and skips `expand`.
@@ -82,7 +83,7 @@ A slow member holds no line of a fast member.
 
 The sum of all `total` lines equals the row count at the end.
 
-- A gig line waits for its own detail read and its own venue read.
+- A gig line waits for its own `expand` and its own venue read.
 - The venue dict stays, so a venue of many gigs costs one read.
 - Pools: `VENUE_CONCURRENCY` (5) for venue reads.
 - A slow event holds no other event.
@@ -124,7 +125,7 @@ top-level `venue` is the address data.
 | The case                      | The time                                            |
 | ----------------------------- | --------------------------------------------------- |
 | the total                     | one candidate list read, or none on a warm day      |
-| the first row                 | one detail read, about 0.2 to 1 second              |
+| the first row                 | one `expand` read, or the venue read alone          |
 | a warm venue cache            | no geocode, about 1 to 2 seconds                    |
 | a cold venue cache, 13 venues | 13 x 1.1 seconds, about 14 seconds for the last row |
 | a venue with no coordinates   | no cache entry, so 1.1 seconds on each request      |
@@ -139,9 +140,9 @@ shows rows at the pace of its event pages.
 | every candidate read fails     | 502 with the first `SourceError`               |
 | one candidate read fails       | a log line. The member sends no line           |
 | a member fails after its total | a log line, `{"total": -r}`, the member stops  |
-| `expand` gives a `SourceError` | artshub keeps the gig. whatson drops the event |
+| `expand` gives a `SourceError` | artshub and beat keep the gig. beat leaves the time empty. whatson drops the event |
 | `expand` raises another error  | a log line, `{"total": -1}`, no day file save  |
-| a detail read fails            | `gig.time` is null                             |
+| an `expand` read fails         | `gig.time` is null                             |
 | a venue read fails             | `venue` is null, and `error` holds the text    |
 
 A `SourceError` text goes to the page. Any other venue error becomes the

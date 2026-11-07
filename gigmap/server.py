@@ -95,16 +95,11 @@ for _group, _names in GROUPS.items():
 # The document title of the server itself.
 SOURCE = SOURCE_INFO[ROOT_SOURCE_NAME]
 
-# A gig time file older than this is removed by the cleanup.
-GIG_TTL_DAYS = 30
 # The cleanup runs at startup, then once each day.
 CLEANUP_INTERVAL_SECONDS = 24 * 3600
-# The detail pages are fetched with a small pool of connections.
-DETAIL_CONCURRENCY = 5
-# The venue reads use the same size of pool.
+# The venue reads use a small pool of connections.
 VENUE_CONCURRENCY = 5
-# One pool of each kind for the whole app, so every request shares the limit.
-DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
+# One pool for the whole app, so every request shares the limit.
 VENUE_POOL = asyncio.Semaphore(VENUE_CONCURRENCY)
 
 # The page shows a failed venue read. Any error that is not a source
@@ -218,7 +213,7 @@ def api_prefix(name: str) -> str:
     return f"/api/{name}"
 
 
-async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources.GigSource]]:
+async def source_dependency(request: Request) -> AsyncIterator[dict[str, stores.CachedSource]]:
     """Give the cached members for the request, then close them.
 
     A group page (`gig`, `art`) opens every member of its group. Each member
@@ -227,7 +222,7 @@ async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources
     name = api_source_name(request.url.path)
     names = GROUPS.get(name, (name,))
     async with AsyncExitStack() as stack:
-        members: dict[str, sources.GigSource] = {}
+        members: dict[str, stores.CachedSource] = {}
         for member in names:
             site = await stack.enter_async_context(SOURCE_FACTORIES[member]())
             members[member] = stores.CachedSource(
@@ -236,7 +231,7 @@ async def source_dependency(request: Request) -> AsyncIterator[dict[str, sources
         yield members
 
 
-MembersDep = Annotated[dict[str, sources.GigSource], Depends(source_dependency)]
+MembersDep = Annotated[dict[str, stores.CachedSource], Depends(source_dependency)]
 
 
 @app.exception_handler(sources.SourceError)
@@ -281,35 +276,6 @@ async def index(request: Request) -> HTMLResponse:
     )
 
 
-async def gig_time(
-    source: sources.GigSource,
-    gig: sources.Gig,
-    semaphore: asyncio.Semaphore,
-) -> str | None:
-    # A source can hold the time in the gig list. A read then costs one
-    # request and adds nothing, so the time of the list stays.
-    if gig.time:
-        return gig.time
-    detail_url = gig.detail_url or ""
-    if not detail_url:
-        return None
-    async with semaphore:
-        data = await source.gig_detail(detail_url)
-    return data.time if data is not None else None
-
-
-async def detail_read(
-    source: sources.GigSource,
-    gig: sources.Gig,
-    semaphore: asyncio.Semaphore,
-) -> str | None:
-    """Return the start time of one gig, and None when the read fails."""
-    try:
-        return await gig_time(source, gig, semaphore)
-    except Exception:
-        return None
-
-
 async def venue_read(
     source: sources.GigSource,
     venue_url: str,
@@ -337,15 +303,10 @@ def venue_failure_text(error: Exception) -> str:
 def event_line(
     index: int,
     gig: sources.Gig,
-    time_text: str | None,
     venue: sources.Venue | Exception | None,
 ) -> str:
     """Return the one stream line of a gig, with all of its data."""
-    data = gig.model_dump()
-    # The line holds the time that the detail read found, so the page
-    # needs no second line for it.
-    data["time"] = time_text
-    line: dict[str, object] = {"index": index, "gig": data, "venue": None}
+    line: dict[str, object] = {"index": index, "gig": gig.model_dump(), "venue": None}
     if isinstance(venue, Exception):
         line["error"] = venue_failure_text(venue)
     elif venue is not None:
@@ -357,10 +318,10 @@ async def event_lines(
     source: sources.GigSource,
     gigs: AsyncIterator[sources.Gig],
 ) -> AsyncIterator[str]:
-    """Yield one line for each gig, as its time and venue arrive.
+    """Yield one line for each gig, as its venue arrives.
 
-    The reads of a gig start when the gig arrives. A gig waits for its
-    own two reads only, so a slow venue holds no other gig's line.
+    The venue read of a gig starts when the gig arrives. A gig waits for
+    its own venue read only, so a slow venue holds no other gig's line.
     """
     # One venue read for each url, so a venue of many gigs costs one read.
     venues: dict[str, asyncio.Task[sources.Venue | Exception]] = {}
@@ -369,11 +330,10 @@ async def event_lines(
     done: asyncio.Queue = asyncio.Queue()
 
     async def one(gig: sources.Gig) -> None:
-        time_text = await detail_read(source, gig, DETAIL_POOL)
         venue: sources.Venue | Exception | None = None
         if gig.venue_url:
             venue = await venues[gig.venue_url]
-        await done.put((gig, time_text, venue))
+        await done.put((gig, venue))
 
     async def feed() -> None:
         try:
@@ -406,28 +366,14 @@ async def event_lines(
         await asyncio.gather(*reads, return_exceptions=True)
 
 
-def candidates_of(member: sources.GigSource):
-    """The candidates read of a member. A source with no `expand` uses `gigs`."""
-    return getattr(member, "candidates", member.gigs)
-
-
-def expand_of(member: sources.GigSource):
-    """The expand read of a member. A source with no `expand` gives `[gig]`."""
-
-    async def identity(gig: sources.Gig, _start_date: str, _end_date: str) -> list[sources.Gig]:
-        return [gig]
-
-    return getattr(member, "expand", identity)
-
-
 async def read_list(
-    member: sources.GigSource, start_date: str, end_date: str
+    member: stores.CachedSource, start_date: str, end_date: str
 ) -> tuple[list[sources.Gig], bool]:
     """Return the warm day file and True, or the candidates and False."""
-    cached = getattr(member, "cached_gigs", None)
-    if cached is not None and (hit := cached(start_date, end_date)) is not None:
+    hit = member.cached_gigs(start_date, end_date)
+    if hit is not None:
         return hit, True
-    return await candidates_of(member)(start_date, end_date), False
+    return await member.candidates(start_date, end_date), False
 
 
 async def wait_for_a_list(
@@ -455,7 +401,7 @@ async def wait_for_a_list(
 
 
 async def merged_lines(
-    members: dict[str, sources.GigSource],
+    members: dict[str, stores.CachedSource],
     lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
     start_date: str,
     end_date: str,
@@ -469,7 +415,7 @@ async def merged_lines(
     """
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-    async def pump(name: str, member: sources.GigSource) -> None:
+    async def pump(name: str, member: stores.CachedSource) -> None:
         running = 0  # the sum of the total lines of this member
         sent = 0  # the gig lines of this member
 
@@ -490,12 +436,11 @@ async def merged_lines(
                     for gig in gigs:
                         yield gig
                     return
-                expand = expand_of(member)
 
                 async def read(i: int, gig: sources.Gig) -> int:
                     nonlocal clean
                     try:
-                        expanded[i] = await expand(gig, start_date, end_date)
+                        expanded[i] = await member.expand(gig, start_date, end_date)
                     except Exception as error:
                         log_kv(LOGGER.warning, "expand failed", source=name, error=error)
                         clean = False
@@ -516,9 +461,10 @@ async def merged_lines(
             async for line in event_lines(member, stream()):
                 sent += 1
                 await queue.put(line)
-            save = getattr(member, "save_gigs", None)
-            if not warm and clean and save is not None:
-                save(start_date, end_date, [g for part in expanded for g in part])
+            if not warm and clean:
+                member.save_gigs(
+                    start_date, end_date, [g for part in expanded for g in part]
+                )
         except Exception as error:
             log_kv(LOGGER.warning, "source failed", source=name, error=error)
             if running != sent:
@@ -630,12 +576,11 @@ def format_size(size: int) -> str:
 
 
 def run_cleanup(
-    gig_days: int = GIG_TTL_DAYS,
     dry_run: bool = False,
     quiet: bool = False,
 ) -> stores.CleanReport:
     """Remove the old data files and log the result."""
-    report = stores.DataStores(data_dir).clean(time.time(), gig_days, dry_run)
+    report = stores.DataStores(data_dir).clean(time.time(), dry_run)
     if quiet:
         return report
     verb = "would remove" if dry_run else "removed"
@@ -643,7 +588,7 @@ def run_cleanup(
         LOGGER.info,
         verb,
         days=report.days,
-        gigs=report.gigs,
+        stale=report.stale,
         size=format_size(report.size),
     )
     if report.skipped:
@@ -660,20 +605,18 @@ def run_cleanup(
 def clean(
     *,
     data_dir: Path | None = None,
-    gig_days: int = GIG_TTL_DAYS,
     dry_run: bool = False,
     quiet: bool = False,
 ) -> None:
     """Remove the data files that the app cannot use again.
 
     :param data_dir: directory for the saved files
-    :param gig_days: keep a gig time file for this many days
     :param dry_run: log the plan and remove nothing
     :param quiet: log nothing
     """
     use_data_dir(data_dir)
     setup_logging()
-    run_cleanup(gig_days, dry_run, quiet)
+    run_cleanup(dry_run, quiet)
 
 
 if __name__ == "__main__":

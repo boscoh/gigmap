@@ -576,12 +576,6 @@ class WhatsonSource:
             f"whatson.melbourne.vic.gov.au answered status {status}"
         )
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs of a date range, one gig for each session day."""
-        candidates = await self.candidates(start_date, end_date)
-        reads = [self.expand(card, start_date, end_date) for card in candidates]
-        return [gig for gigs in await asyncio.gather(*reads) for gig in gigs]
-
     async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the candidate cards of one range, one card for each event.
 
@@ -619,16 +613,6 @@ class WhatsonSource:
             LOGGER.warning("skip the event page %s: %s", url, error)
             return []
         return parse_event(body, gig, start_date, end_date)
-
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        """Return the detail of one event.
-
-        The gig already holds its time in the list, so the read adds nothing
-        and makes no request.
-        """
-        if DETAIL_URL_RE.fullmatch(detail_url) is None:
-            return None
-        return sources.GigDetail(detail_url=detail_url)
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

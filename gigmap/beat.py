@@ -68,6 +68,11 @@ HEADERS = {
 SERVER_ERROR_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 1.0
 
+# The detail reads hold the most reads, so a request runs five at a time.
+DETAIL_CONCURRENCY = 5
+# One pool for the whole app, so every request shares the limit.
+DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -102,7 +107,7 @@ def attribute(node: object, name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def parse_gig_detail(html: str, detail_url: str) -> sources.GigDetail:
+def parse_gig_detail(html: str) -> str | None:
     soup = BeautifulSoup(html, "lxml")
     time_text = None
     for item in soup.select(".article-meta-item"):
@@ -113,7 +118,7 @@ def parse_gig_detail(html: str, detail_url: str) -> sources.GigDetail:
         if content is not None:
             time_text = content.get_text(" ", strip=True)
         break
-    return sources.GigDetail(detail_url=detail_url, time=normalise_time(time_text))
+    return normalise_time(time_text)
 
 
 FREE_PRICE = "Free"
@@ -315,19 +320,27 @@ class BeatSource:
         }
         return await self._html(BEAT_URL, params=params)
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        """Return the gigs of a date range."""
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        """Return the listed gigs. `expand` adds the time."""
         return parse_gigs(await self.page(start_date, end_date))
 
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        """Return the detail of one gig. None when the read fails."""
-        if DETAIL_URL_RE.fullmatch(detail_url) is None:
-            return None
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        """Return the gig with its time from the detail page.
+
+        The result is always the one gig. A failed read leaves the time empty.
+        """
+        url = gig.detail_url or ""
+        if gig.time or DETAIL_URL_RE.fullmatch(url) is None:
+            return [gig]
         try:
-            html = await self._html(detail_url)
-        except sources.SourceError:
-            return None
-        return parse_gig_detail(html, detail_url)
+            async with DETAIL_POOL:
+                html = await self._html(url)
+        except sources.SourceError as error:
+            LOGGER.warning("skip the detail page %s: %s", url, error)
+            return [gig]
+        return [gig.model_copy(update={"time": parse_gig_detail(html)})]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""

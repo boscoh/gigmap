@@ -33,48 +33,54 @@ def test_the_cleanup_removes_only_the_old_files(data_dir: Path) -> None:
     fresh_day = write(data_dir / "days" / "gigmap_2020-01-02_2020-01-02.json", 0)
     future_day = write(data_dir / "days" / "gigmap_2999-01-01_2999-01-01.json", OLD)
     unknown_day = write(data_dir / "days" / "notes.json", OLD)
-    old_gig = write(data_dir / "gigs" / "old.json", OLD)
-    new_gig = write(data_dir / "gigs" / "new.json", 0)
     venue = write(data_dir / "venues" / "keep.json", OLD)
 
-    report = stores.DataStores(server.data_dir).clean(
-        time.time(), server.GIG_TTL_DAYS, dry_run=False
-    )
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
 
     assert not stale_day.exists()
-    assert not old_gig.exists()
-    for kept in (fresh_day, future_day, unknown_day, new_gig, venue):
+    for kept in (fresh_day, future_day, unknown_day, venue):
         assert kept.exists()
     assert report.days == 1
-    assert report.gigs == 1
     # The recent day file matches the past-range rule, so it counts as skipped.
     assert report.skipped == 1
 
 
 def test_the_dry_run_removes_nothing(data_dir: Path) -> None:
     stale_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", OLD)
-    old_gig = write(data_dir / "gigs" / "old.json", OLD)
 
-    report = stores.DataStores(server.data_dir).clean(
-        time.time(), server.GIG_TTL_DAYS, dry_run=True
-    )
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=True)
 
     assert stale_day.exists()
-    assert old_gig.exists()
     assert report.days == 1
-    assert report.gigs == 1
 
 
 def test_a_recent_file_is_skipped(data_dir: Path) -> None:
     fresh_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", 0)
 
-    report = stores.DataStores(server.data_dir).clean(
-        time.time(), server.GIG_TTL_DAYS, dry_run=False
-    )
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
 
     assert fresh_day.exists()
     assert report.days == 0
     assert report.skipped == 1
+
+
+def test_the_stale_gig_tree_is_removed(data_dir: Path) -> None:
+    gig = write(data_dir / "gigs" / "beat_abby-hayes.json", OLD)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert not gig.exists()
+    assert report.stale == 1
+    assert report.size > 0
+
+
+def test_the_dry_run_keeps_the_stale_gig_tree(data_dir: Path) -> None:
+    gig = write(data_dir / "gigs" / "beat_abby-hayes.json", OLD)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=True)
+
+    assert gig.exists()
+    assert report.stale == 1
 
 
 def test_run_cleanup_logs_the_report(
@@ -88,7 +94,6 @@ def test_run_cleanup_logs_the_report(
     message = caplog.messages[0]
     assert "removed" in message
     assert "days" in message
-    assert "gigs" in message
     assert "size" in message
 
 

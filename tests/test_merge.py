@@ -17,7 +17,7 @@ class Member:
         self.fail = fail
         self.gate: asyncio.Event | None = None
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
         if self.gate is not None:
             await self.gate.wait()
         if self.fail:
@@ -26,12 +26,25 @@ class Member:
             sources.Gig(
                 artist=self.host,
                 detail_url=f"https://{self.host}/act/",
+                time="8pm",
                 venue_url=f"https://{self.host}/venue/",
             )
         ]
 
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        return sources.GigDetail(detail_url=detail_url, time="8pm")
+    def cached_gigs(self, start_date: str, end_date: str) -> list[sources.Gig] | None:
+        """This member keeps no day file."""
+        return None
+
+    def save_gigs(
+        self, start_date: str, end_date: str, gigs: list[sources.Gig]
+    ) -> None:
+        """This member keeps no day file."""
+
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        """This member keeps no event detail."""
+        return [gig]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         return sources.Venue(venue_url=venue_url, name=self.host)
@@ -125,7 +138,7 @@ def test_the_art_page_counts_exhibits() -> None:
 
 
 class Expander(Member):
-    """A member with `candidates` and `expand`. Each event gives `sessions[url]` gigs."""
+    """A member whose `expand` gives `sessions[name]` gigs for one candidate."""
 
     def __init__(self, host: str, sessions: dict[str, int]) -> None:
         super().__init__(host)
@@ -223,38 +236,3 @@ def test_one_failed_list_leaves_the_other_member_streaming() -> None:
     lines = asyncio.run(stream({"a": Member("a.test", fail=True), "b": Member("b.test")}))
 
     assert artists(lines) == ["b.test"]
-
-
-class Slow(Member):
-    """A member with many gigs. Each detail read waits and counts the reads in flight."""
-
-    def __init__(self, host: str, count: int, flight: list[int]) -> None:
-        super().__init__(host)
-        self.count = count
-        self.flight = flight  # [active, peak], shared by both members
-
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        return [
-            sources.Gig(artist=f"a{i}", detail_url=f"https://{self.host}/{i}/")
-            for i in range(self.count)
-        ]
-
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        self.flight[0] += 1
-        self.flight[1] = max(self.flight[1], self.flight[0])
-        await asyncio.sleep(0.01)
-        self.flight[0] -= 1
-        return sources.GigDetail(detail_url=detail_url, time="8pm")
-
-
-def test_two_streams_share_one_pool() -> None:
-    flight = [0, 0]
-    first, second = Slow("a.test", 8, flight), Slow("b.test", 8, flight)
-
-    async def run() -> None:
-        await asyncio.gather(stream({"a": first}), stream({"b": second}))
-
-    asyncio.run(run())
-
-    # The reads of both streams together never pass the one shared pool.
-    assert flight[1] == server.DETAIL_CONCURRENCY

@@ -25,17 +25,15 @@ class FakeSource:
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.gig_error: Exception | None = None
-        self.detail_error: Exception | None = None
         self.venue_error: Exception | None = None
         self.gig_venue_urls: list[str] = [VENUE_URL]
-        self.gig_time: str | None = None
         # A test holds the read of one venue at this url until it opens
         # the gate, so a second gig can leave its line first.
         self.slow_venue_url: str | None = None
         self.venue_gate: asyncio.Event | None = None
 
-    async def gigs(self, start_date: str, end_date: str) -> list[sources.Gig]:
-        self.calls.append(("gigs", start_date, end_date))
+    async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
+        self.calls.append(("candidates", start_date, end_date))
         if self.gig_error is not None:
             raise self.gig_error
         return [
@@ -44,16 +42,16 @@ class FakeSource:
                 detail_url="https://beat.com.au/act/",
                 venue="Venue",
                 venue_url=venue_url,
-                time=self.gig_time,
+                time="8:30pm",
             )
             for venue_url in self.gig_venue_urls
         ]
 
-    async def gig_detail(self, detail_url: str) -> sources.GigDetail | None:
-        self.calls.append(("gig_detail", detail_url))
-        if self.detail_error is not None:
-            raise self.detail_error
-        return sources.GigDetail(detail_url=detail_url, time="8:30pm")
+    async def expand(
+        self, gig: sources.Gig, start_date: str, end_date: str
+    ) -> list[sources.Gig]:
+        self.calls.append(("expand", start_date, end_date))
+        return [gig]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         self.calls.append(("venue", venue_url))
@@ -251,7 +249,7 @@ def test_a_read_answers_on_the_fringe_path(
     )
 
     assert response.status_code == 200
-    assert fake.calls[0] == ("gigs", "2026-10-01", "2026-10-02")
+    assert fake.calls[0] == ("candidates", "2026-10-01", "2026-10-02")
 
 
 def test_each_source_page_answers_its_own_source(
@@ -290,7 +288,7 @@ def test_the_event_line_holds_every_gig_field(
         "image_alt": None,
         "time": "8:30pm",
     }
-    assert ("gigs", "2026-10-01", "2026-10-02") in fake.calls
+    assert ("candidates", "2026-10-01", "2026-10-02") in fake.calls
 
 
 def _lines(response: Any) -> list[dict[str, Any]]:
@@ -363,34 +361,6 @@ def test_the_event_stream_reads_a_shared_venue_one_time(
     lines = _lines(response)
     assert len(lines) == 2
     assert all(line["venue"]["venue_url"] == VENUE_URL for line in lines)
-
-
-def test_the_event_stream_skips_the_detail_read_of_a_listed_time(
-    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    http, fake = client
-    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-    fake.gig_time = "7:30pm"
-
-    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
-
-    assert line["gig"]["time"] == "7:30pm"
-    assert ("gig_detail", "https://beat.com.au/act/") not in fake.calls
-
-
-def test_the_event_stream_answers_a_failed_detail_line(
-    client: tuple[TestClient, FakeSource], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    http, fake = client
-    monkeypatch.setattr(geocode, "geocode_venue", _no_place)
-    fake.detail_error = sources.SourceError("no detail page")
-
-    line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
-
-    assert line["index"] == 0
-    assert line["gig"]["time"] is None
-    assert line["venue"]["venue_url"] == VENUE_URL
-    assert "error" not in line
 
 
 def test_a_stream_tells_nginx_to_pass_the_lines_at_once(
@@ -532,28 +502,6 @@ def test_a_source_error_answers_502(client: tuple[TestClient, FakeSource]) -> No
 
 async def _no_place(name: str | None, address: str | None) -> dict | None:
     return None
-
-
-def test_the_wrapper_caches_the_gig_reads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
-    fake = FakeSource()
-    source = stores.CachedSource(fake, stores.DataStores(server.data_dir))
-
-    async def run() -> None:
-        first = await source.gigs("2026-10-01", "2026-10-02")
-        second = await source.gigs("2026-10-01", "2026-10-02")
-        assert first == second
-        assert await source.gig_detail("https://beat.com.au/act/") is not None
-        assert await source.gig_detail("https://beat.com.au/act/") is not None
-
-    asyncio.run(run())
-
-    assert fake.calls == [
-        ("gigs", "2026-10-01", "2026-10-02"),
-        ("gig_detail", "https://beat.com.au/act/"),
-    ]
 
 
 def test_the_venue_is_cached_only_with_coordinates(
@@ -759,3 +707,81 @@ def test_the_beat_source_keeps_the_target_that_passed() -> None:
 
     assert asyncio.run(source._html(beat.BEAT_URL)) == "<html>ok</html>"
     assert beat._current_target == "safari_ios"
+
+
+# The beat expand reads the time from the detail page.
+
+DETAIL_HTML = """
+<div class="article-meta-item">
+  <div class="article-meta-headline">Time</div>
+  <div class="article-meta-content">8.30pm</div>
+</div>
+"""
+
+
+def _bare_gig(**fields: Any) -> sources.Gig:
+    return sources.Gig(artist="Act", detail_url="https://beat.com.au/act/", **fields)
+
+
+def test_expand_fills_the_time_under_the_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(beat, "DETAIL_POOL", asyncio.Semaphore(1))
+    source = beat.BeatSource()
+    seen: list[bool] = []
+
+    async def html(url: str, params: dict[str, str] | None = None) -> str:
+        seen.append(beat.DETAIL_POOL.locked())
+        return DETAIL_HTML
+
+    source._html = html  # type: ignore[method-assign]
+
+    result = asyncio.run(source.expand(_bare_gig(), "2026-10-01", "2026-10-02"))
+
+    assert [gig.time for gig in result] == ["8:30pm"]
+    assert seen == [True]
+
+
+def test_expand_keeps_the_gig_when_the_detail_read_fails() -> None:
+    source = beat.BeatSource()
+
+    async def html(url: str, params: dict[str, str] | None = None) -> str:
+        raise sources.SourceError("no detail page")
+
+    source._html = html  # type: ignore[method-assign]
+    gig = _bare_gig()
+
+    assert asyncio.run(source.expand(gig, "2026-10-01", "2026-10-02")) == [gig]
+
+
+def test_expand_keeps_the_time_of_the_list() -> None:
+    """A listed time costs no read."""
+    source = beat.BeatSource()
+    calls: list[str] = []
+
+    async def html(url: str, params: dict[str, str] | None = None) -> str:
+        calls.append(url)
+        return DETAIL_HTML
+
+    source._html = html  # type: ignore[method-assign]
+    gig = _bare_gig(time="9pm")
+
+    assert asyncio.run(source.expand(gig, "2026-10-01", "2026-10-02")) == [gig]
+    assert calls == []
+
+
+def test_expand_skips_a_url_that_is_not_a_detail_page() -> None:
+    source = beat.BeatSource()
+    calls: list[str] = []
+
+    async def html(url: str, params: dict[str, str] | None = None) -> str:
+        calls.append(url)
+        return DETAIL_HTML
+
+    source._html = html  # type: ignore[method-assign]
+    gigs = [
+        sources.Gig(artist="Act", detail_url="https://example.test/act/"),
+        sources.Gig(artist="Act"),
+    ]
+
+    for gig in gigs:
+        assert asyncio.run(source.expand(gig, "2026-10-01", "2026-10-02")) == [gig]
+    assert calls == []

@@ -188,7 +188,8 @@ def gigs_on(start: str, end: str, page: str | None) -> list[sources.Gig]:
 
         source._feed_page = feed  # type: ignore[method-assign]
         source._text = text  # type: ignore[method-assign]
-        return await source.gigs(start, end)
+        (card,) = await source.candidates(start, end)
+        return await source.expand(card, start, end)
 
     return asyncio.run(run())
 
