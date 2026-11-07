@@ -135,6 +135,8 @@ VENUES_VERSION = "v1"
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.
 MISS_CACHE_SECONDS = 7 * 86400
+# A venue file of this part holds the answer that Nominatim has no place.
+MISS_PART = "miss"
 # The day files are named gigmap_<source>_<version>_<start>_<end>.json.
 # A file of an older layout has no source part or no version part, and the
 # cleanup still removes it.
@@ -154,6 +156,7 @@ class CleanReport(NamedTuple):
 
     days: int
     events: int
+    venues: int
     stale: int
     size: int
     skipped: int
@@ -306,14 +309,20 @@ class DataStores:
             today = date of now
             for path in data/days/gigmap_*.json:
                 end = the date from the file name
-                if end < today and age(path) >= DAYS_CACHE_SECONDS:
+                old_shape = the version part != DAYS_VERSION
+                if (old_shape or end < today) and age(path) >= DAYS_CACHE_SECONDS:
                     remove(path)
 
             for path in data/events/<source>_<version>_*.json:
                 if age(path) >= EVENTS_CACHE_SECONDS or version != EVENTS_VERSION:
                     remove(path)
 
-            # data/venues/*.json is never touched
+            for path in data/venues/<source>_*.json:
+                if the second part is `miss`:
+                    remove when age(path) >= MISS_CACHE_SECONDS
+                elif the version part != VENUES_VERSION:
+                    remove, because no code reads that shape
+                # the file of the current version stays
 
             for name in STALE_SUBDIRS:
                 remove the whole tree, because no code reads it
@@ -324,15 +333,17 @@ class DataStores:
            request can hold the file.
         2. Match the name pattern only.
         3. A directory goes only when its name is in `STALE_SUBDIRS`.
-        4. Do not remove a venue file.
+        4. Keep a venue file of the current version only.
         5. A failed removal must not stop the run.
         6. `--dry-run` removes nothing.
 
-        A venue file stays. The Nominatim policy needs the cache.
+        A venue file of the current version stays, because the Nominatim
+        policy needs the cache. An older one goes, because no code reads it.
         """
         today = datetime.fromtimestamp(now).date().isoformat()
         day_count = 0
         event_count = 0
+        venue_count = 0
         size = 0
         stale = 0
         skipped = 0
@@ -345,7 +356,12 @@ class DataStores:
 
         for path in sorted(self.days.directory().glob("*.json")):
             match = DAY_FILE_RE.fullmatch(path.name)
-            if match is None or match.group("end") >= today:
+            if match is None:
+                continue
+            # A file of an older shape is never read again, so it goes at
+            # the first chance that the age rule allows.
+            old_shape = match.group("version") != DAYS_VERSION
+            if not old_shape and match.group("end") >= today:
                 continue
             if not old_enough(path, now, DAYS_CACHE_SECONDS):
                 skipped += 1
@@ -364,9 +380,24 @@ class DataStores:
             size += remove_file(path, dry_run)
             event_count += 1
 
+        for path in sorted((self._root() / VENUES_SUBDIR).glob("*.json")):
+            parts = path.name.split("_")
+            if len(parts) < 2:
+                # An unknown name stays, as the day rule does.
+                continue
+            if parts[1] == MISS_PART:
+                if not old_enough(path, now, MISS_CACHE_SECONDS):
+                    continue
+            elif path.name.startswith(f"{parts[0]}_{VENUES_VERSION}_"):
+                # The current shape. The Nominatim policy needs it.
+                continue
+            size += remove_file(path, dry_run)
+            venue_count += 1
+
         return CleanReport(
             days=day_count,
             events=event_count,
+            venues=venue_count,
             stale=stale,
             size=size,
             skipped=skipped,

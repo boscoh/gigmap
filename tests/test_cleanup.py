@@ -29,11 +29,20 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_the_cleanup_removes_only_the_old_files(data_dir: Path) -> None:
-    stale_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", OLD)
-    fresh_day = write(data_dir / "days" / "gigmap_2020-01-02_2020-01-02.json", 0)
-    future_day = write(data_dir / "days" / "gigmap_2999-01-01_2999-01-01.json", OLD)
+    version = stores.DAYS_VERSION
+    stale_day = write(
+        data_dir / "days" / f"gigmap_beat_{version}_2020-01-01_2020-01-01.json", OLD
+    )
+    fresh_day = write(
+        data_dir / "days" / f"gigmap_beat_{version}_2020-01-02_2020-01-02.json", 0
+    )
+    future_day = write(
+        data_dir / "days" / f"gigmap_beat_{version}_2999-01-01_2999-01-01.json", OLD
+    )
     unknown_day = write(data_dir / "days" / "notes.json", OLD)
-    venue = write(data_dir / "venues" / "keep.json", OLD)
+    venue = write(
+        data_dir / "venues" / f"beat_{stores.VENUES_VERSION}_keep.json", OLD
+    )
 
     report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
 
@@ -193,3 +202,64 @@ def test_the_dry_run_keeps_the_event_files(data_dir: Path) -> None:
 
     assert report.events == 1
     assert old.exists()
+
+
+def test_a_day_file_of_an_old_version_goes(data_dir: Path) -> None:
+    """A file of an older shape is never read again, so it goes."""
+    old_shape = write(
+        data_dir / "days" / "gigmap_beat_v10_2999-01-01_2999-01-01.json", OLD
+    )
+    unversioned = write(data_dir / "days" / "gigmap_2999-01-01_2999-01-01.json", OLD)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert report.days == 2
+    assert not old_shape.exists() and not unversioned.exists()
+
+
+def test_a_day_file_of_an_old_version_that_a_request_may_hold_stays(
+    data_dir: Path,
+) -> None:
+    old_shape = write(
+        data_dir / "days" / "gigmap_beat_v10_2020-01-01_2020-01-01.json", 0
+    )
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert report.days == 0
+    assert report.skipped == 1
+    assert old_shape.exists()
+
+
+def test_a_venue_file_of_an_old_shape_goes(data_dir: Path) -> None:
+    unversioned = write(data_dir / "venues" / "beat_Playhouse.json", OLD)
+    old_version = write(data_dir / "venues" / "beat_v0_Playhouse.json", OLD)
+    current = write(
+        data_dir / "venues" / f"beat_{stores.VENUES_VERSION}_Playhouse.json", OLD
+    )
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert report.venues == 2
+    assert not unversioned.exists() and not old_version.exists()
+    assert current.exists()
+
+
+def test_a_miss_file_goes_after_the_wait(data_dir: Path) -> None:
+    stale = write(data_dir / "venues" / "beat_miss_Playhouse.json", 8 * 86400)
+    fresh = write(data_dir / "venues" / "beat_miss_Hamer.json", 0)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert report.venues == 1
+    assert not stale.exists()
+    assert fresh.exists()
+
+
+def test_the_dry_run_keeps_an_old_venue_file(data_dir: Path) -> None:
+    old_shape = write(data_dir / "venues" / "beat_Playhouse.json", OLD)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=True)
+
+    assert report.venues == 1
+    assert old_shape.exists()

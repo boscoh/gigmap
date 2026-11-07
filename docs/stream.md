@@ -54,7 +54,7 @@ A source splits a list read into two steps.
 | Cache          | Content                                        | Rule                                                                                      |
 | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v11` in `gigmap/stores.py`             |
-| `data/venues/` | each venue with its coordinates                | saved only with coordinates                                                               |
+| `data/venues/` | each venue with its coordinates                | kept while `VENUES_VERSION` matches. Saved only with coordinates                          |
 | `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` is `v1`. Bump it with any parser change |
 
 - `data/events/` serves the detail read of `expand` in beat (the time), artshub
@@ -65,7 +65,8 @@ A source splits a list read into two steps.
   in candidate order.
 - A cancel saves no day file. An `expand` error that is not a `SourceError`
   also saves none.
-- A venue with no coordinates costs one lookup on each request.
+- A venue with no coordinates costs one lookup for each `MISS_CACHE_SECONDS`
+  (7 days), because the miss cache holds that answer.
 - The geocoder holds its own rate limit: one request each `GEOCODE_SECONDS`
   (1.1). A venue with a cache entry skips it.
 - An old venue file can hold `display_name`, `map_embed_url` and `map_url`.

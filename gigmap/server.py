@@ -584,6 +584,7 @@ def run_cleanup(
         days=report.days,
         stale=report.stale,
         events=report.events,
+        venues=report.venues,
         size=format_size(report.size),
     )
     if report.skipped:
