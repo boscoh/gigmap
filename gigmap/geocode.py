@@ -92,6 +92,7 @@ def address_query(address: str) -> str:
 
 
 THE_RE = re.compile(r"^the\s+", re.IGNORECASE)
+BRACKET_RE = re.compile(r"\([^)]*\)")
 STATE_RE = re.compile(r"\b(VIC|Victoria)\b", re.IGNORECASE)
 POSTCODE_RE = re.compile(r"\b\d{4}\b")
 
@@ -112,8 +113,14 @@ def locality(address: str | None) -> str | None:
 
 
 def name_query(name: str, address: str | None) -> str:
-    """Return the query for one venue name, with no leading `The`."""
-    bare = THE_RE.sub("", name).strip() or name
+    """Return the query for one venue name, with no leading `The`.
+
+    A bracketed gloss breaks the lookup: Nominatim finds no place for
+    `ACMI (Australian Centre for the Moving Image)`, but it finds
+    `ACMI`.
+    """
+    bare = " ".join(BRACKET_RE.sub(" ", name).split()) or name
+    bare = THE_RE.sub("", bare).strip() or bare
     return f"{bare}, {locality(address) or 'Melbourne'}, Australia"
 
 

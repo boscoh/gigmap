@@ -16,6 +16,13 @@ def test_the_name_query_drops_a_leading_the() -> None:
     assert geocode.name_query("The Curtin", None) == "Curtin, Melbourne, Australia"
 
 
+def test_the_name_query_drops_a_bracketed_gloss() -> None:
+    """Nominatim finds no place for the long name with the gloss."""
+    assert geocode.name_query(
+        "ACMI (Australian Centre for the Moving Image)", "Flinders St, Melbourne 3000"
+    ) == "ACMI, Melbourne, Australia"
+
+
 def test_the_name_query_uses_the_suburb_of_the_address() -> None:
     """`Curtin, Melbourne` finds a street 10 km away. The suburb is the key."""
     assert geocode.name_query("The Curtin", "11 Nicholson St, Carlton 3053") == (
