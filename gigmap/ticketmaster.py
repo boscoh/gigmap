@@ -2,16 +2,14 @@
 
 The key is in `.env` as TICKETMASTER_API_KEY. The quota is 5000 calls a day
 and 5 calls a second. This client waits `DELAY` seconds between live calls,
-caches each answer on disk, and stops on HTTP 429.
+and stops on HTTP 429.
 """
 
 import asyncio
-import hashlib
-import json
 import os
+import threading
 import time
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -28,40 +26,34 @@ MELBOURNE_RADIUS_KM = 30
 DELAY = 1.0
 PAGE_SIZE = 100
 MAX_WINDOW = 1000  # API limit: size * page must stay below this
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "ticketmaster"
-CACHE_SECONDS = 6 * 3600
 
 _last_call = 0.0
+_lock = threading.Lock()
 
 
 def _get(params: dict) -> dict:
-    """Return one answer. Read the cache first. Never print the key."""
+    """Return one answer. The lock keeps calls `DELAY` apart. Never print the key."""
     global _last_call
-    name = hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
-    path = CACHE_DIR / f"{name}.json"
-    try:
-        if time.time() - path.stat().st_mtime < CACHE_SECONDS:
-            return json.loads(path.read_text())
-    except (OSError, ValueError):
-        pass  # no cache file, or a bad one: fetch again
     load_dotenv()
-    wait = DELAY - (time.monotonic() - _last_call)
-    if wait > 0:
-        time.sleep(wait)
-    response = httpx.get(
-        URL, params={**params, "apikey": os.environ["TICKETMASTER_API_KEY"]}, timeout=30
-    )
-    _last_call = time.monotonic()
+    with _lock:
+        wait = DELAY - (time.monotonic() - _last_call)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            response = httpx.get(
+                URL,
+                params={**params, "apikey": os.environ["TICKETMASTER_API_KEY"]},
+                timeout=30,
+            )
+        finally:
+            _last_call = time.monotonic()
     if response.status_code == 429:
         raise RuntimeError("Ticketmaster rate limit reached. Stop and retry later.")
     response.raise_for_status()
     available = response.headers.get("Rate-Limit-Available")
     if available:
         print(f"ticketmaster quota left: {available}")
-    data = response.json()
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
-    return data
+    return response.json()
 
 
 def melbourne_events(
