@@ -1,7 +1,7 @@
 # Server cache and cost control
 
-**Status:** Draft. T2, T4 and T5 are not built. The page cleanup and the page
-trim are built and uncommitted; **D17 reverts both.**
+**Status:** Built. T2, T4 and T5 are merged, and the full suite passes.
+The page cleanup and the page trim were stashed, not merged: `git stash list`. **D17 deletes both.**
 **Owner:** boscoh
 
 ## Summary
@@ -27,7 +27,7 @@ trim are built and uncommitted; **D17 reverts both.**
 | D13 | **`Cache-Control: no-store, no-transform` on the stream**                | Headers go out first; `no-transform` stops an edge buffering it         |
 | D15 | **A range must not span more than 7 days**                               | It bounds the flight keys, the lists and the day files                  |
 | D16 | **The stream queue holds at most 64 lines**                              | A stalled reader pauses the pumps, not the memory                       |
-| D17 | **Drop the Ticketmaster page cache**                                      | The day file is the parsed cache; a page adds a 6 h stale floor         |
+| D17 | **Drop the Ticketmaster page cache**                                     | The day file is the parsed cache; a page adds a 6 h stale floor         |
 | D18 | **A heartbeat line `{"total": 0}` each 25 s of silence**                 | nginx cuts a silent gap at 60 s, and the retry would repeat the cut     |
 | D19 | **`pump` saves the day file once `expand` finishes**                     | A cut after that point leaves a warm file, so the retry skips the fetch |
 | D20 | **The sentinel goes in with `put_nowait`, dropped on `QueueFull`**       | `await put` in `finally` blocks a cancelled pump on a full queue        |
@@ -173,6 +173,7 @@ so the day key is already the natural key.
 | `tests/test_ticketmaster.py`   | New: the delay serialization, and no page file                             |
 | `tests/test_single_flight.py`  | New: two cold requests make one `candidates` call                          |
 | `tests/test_source.py`         | The 502 case becomes a 200 case with a `done` line                         |
+| `tests/test_merge.py`          | The every-member-fails case expects 200 and a `done` line                  |
 | `tests/test_stream_failure.py` | New: the failure cases of the stream                                       |
 
 ## Tests
