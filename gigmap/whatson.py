@@ -41,8 +41,8 @@ The session table
 `table#date-times-table` holds the sessions, one row for each session day. A
 row can hold two `li` entries, for example a matinee and an evening show, and
 the module keeps the first. Each `li` holds a `span[aria-hidden=true]` and a
-`span.sr-only`; the `sr-only` text is the clean time, so the module reads it
-and strips the end time to leave the first start time.
+`span.sr-only`; the `sr-only` text is the clean time, so the module reads the
+start and the end from it, for example `7:30pm - 9:45pm`.
 
 The year problem
 
@@ -100,6 +100,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from gigmap import sources, stores
 from gigmap.logger import log_request
+from gigmap.schedule import clock_text, span_text
 
 SITE_URL = "https://whatson.melbourne.vic.gov.au"
 SITE_HOST = urlsplit(SITE_URL).netloc
@@ -156,7 +157,7 @@ PRICE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 # the day and the month, and adds the year from the JSON-LD run window.
 SESSION_DAY_RE = re.compile(r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]{3})")
 # The sr-only time of a session, for example `7:30pm - 9:45pm`. The module
-# keeps the first time only.
+# reads the start and then the end.
 TIME_RE = re.compile(
     r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<meridiem>am|pm)",
     re.IGNORECASE,
@@ -326,42 +327,52 @@ def session_dates(day_text: str, start_date: str, end_date: str) -> list[str]:
     return dates
 
 
-def time_text(value: object) -> str | None:
-    """Return the first start time of one session, or None for no time.
-
-    The sr-only text has the form `7:30pm - 9:45pm`. The module keeps the first
-    time and drops the end time, in the form `7:30pm` that the front end reads.
-    """
-    match = TIME_RE.search(value) if isinstance(value, str) else None
-    if match is None:
+def _clock(match: re.Match[str]) -> str | None:
+    """Return the 24 hour `HH:MM` of one time match, or None for a bad value."""
+    hour = int(match.group("hour")) % 12
+    if match.group("meridiem").lower() == "pm":
+        hour += 12
+    minute = int(match.group("minute") or 0)
+    if minute > 59:
         return None
-    hour = int(match.group("hour"))
-    minute = match.group("minute")
-    meridiem = match.group("meridiem").lower()
-    return f"{hour}:{minute}{meridiem}" if minute else f"{hour}{meridiem}"
+    return f"{hour:02d}:{minute:02d}"
 
 
-def parse_sessions(soup) -> list[tuple[str, str | None]]:
-    """Return the session days of one event page, as raw pairs.
+def time_pair(value: object) -> tuple[str | None, str | None]:
+    """Return the start and the end of one session time, in `HH:MM` form.
 
-    Each result is a pair of the day text and the first start time of that
-    day. The day text has no year, so the range is applied later by
-    `fit_event`. A day with two sessions keeps only the first time.
+    The sr-only text has the form `7:30pm - 9:45pm`. A text with one time has
+    no end, so the end is None. A missing part is None too.
     """
-    sessions: list[tuple[str, str | None]] = []
+    found = list(TIME_RE.finditer(value)) if isinstance(value, str) else []
+    if not found:
+        return None, None
+    start = _clock(found[0])
+    end = _clock(found[1]) if len(found) > 1 else None
+    return start, end
+
+
+def parse_sessions(soup) -> list[tuple[str, str | None, str | None]]:
+    """Return the session days of one event page, as raw triples.
+
+    Each result is the day text, the start and the end of the first session of
+    that day, in `HH:MM` form. The day text has no year, so the range is
+    applied later by `fit_event`. A day with two sessions keeps the first.
+    """
+    sessions: list[tuple[str, str | None, str | None]] = []
     for row in soup.select("table#date-times-table tr"):
         header = row.find("th")
         if header is None:
             continue
-        # The first li of the day holds the first start time.
-        first_time: str | None = None
+        # The first li of the day holds the first session.
+        start: str | None = None
+        end: str | None = None
         for li in row.select("td li"):
             sr = li.select_one("span.sr-only")
-            candidate = time_text(sr.get_text(strip=True) if sr else None)
-            if candidate is not None:
-                first_time = candidate
+            start, end = time_pair(sr.get_text(strip=True) if sr else None)
+            if start is not None:
                 break
-        sessions.append((header.get_text(" ", strip=True), first_time))
+        sessions.append((header.get_text(" ", strip=True), start, end))
     return sessions
 
 
@@ -451,7 +462,7 @@ class WhatsonEvent(BaseModel):
     run_end: str
     image: str | None
     ticket: sources.Ticket | None
-    sessions: list[tuple[str, str | None]]
+    sessions: list[tuple[str, str | None, str | None]]
 
 
 # The range-free parse of each event page, keyed by url. whatsonart shares it.
@@ -501,7 +512,7 @@ def fit_event(
     """
     venue = event.venue_name or (event.street or event.locality)
     gigs = []
-    for day_text, first_time in event.sessions:
+    for day_text, start, end in event.sessions:
         for day_value in session_dates(day_text, start_date, end_date):
             # The search filter is coarse, so the year and the range of the run
             # are re-checked here against the real session day.
@@ -520,7 +531,8 @@ def fit_event(
                     ticket=event.ticket,
                     image_url=absolute_url(event.image) or card.image_url,
                     image_alt=card.image_alt,
-                    time=first_time,
+                    time=clock_text(start) if start else None,
+                    hours=span_text(start, end),
                 )
             )
     return gigs

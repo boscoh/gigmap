@@ -216,7 +216,9 @@ def test_a_gig_with_no_schedule_stays_with_no_time() -> None:
     assert [g.time for g in gigs_on("2026-11-02", "2026-11-02", page)] == [None]
 
 
-def expand(page: str | None, start: str = "2026-11-02") -> list[sources.Gig]:
+def expand(
+    page: str | None, start: str = "2026-11-02", end: str | None = None
+) -> list[sources.Gig]:
     """Return `expand` of one fake gig, with the event page faked."""
 
     async def run() -> list[sources.Gig]:
@@ -229,7 +231,7 @@ def expand(page: str | None, start: str = "2026-11-02") -> list[sources.Gig]:
 
         source._text = text  # type: ignore[method-assign]
         gig = sources.Gig(artist="X", detail_url=GIG_URL)
-        return await source.expand(gig, start, start)
+        return await source.expand(gig, start, end or start)
 
     return asyncio.run(run())
 
@@ -244,6 +246,17 @@ def test_expand_keeps_the_gig_when_the_page_read_fails() -> None:
 
 def test_expand_sets_the_time_from_the_schedule() -> None:
     assert [g.time for g in expand(PAGE, "2026-11-05")] == ["10:00am"]
+
+
+@pytest.mark.parametrize(
+    "start, end, hours",
+    [
+        ("2026-11-05", "2026-11-05", "10am - 5pm"),  # Thursday
+        ("2026-11-02", "2026-11-05", "Tue - Sun 10am - 5pm"),  # many days
+    ],
+)
+def test_expand_sets_the_hours_text(start, end, hours) -> None:
+    assert [g.hours for g in expand(PAGE, start, end)] == [hours]
 
 
 def expand_twice(

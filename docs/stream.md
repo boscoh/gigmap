@@ -53,9 +53,9 @@ A source splits a list read into two steps.
 
 | Cache          | Content                                        | Rule                                                                                      |
 | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v11` in `gigmap/stores.py`             |
+| `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v12` in `gigmap/stores.py`             |
 | `data/venues/` | each venue with its coordinates                | kept while `VENUES_VERSION` matches. Saved only with coordinates                          |
-| `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` is `v1`. Bump it with any parser change |
+| `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` is `v2`. Bump it with any parser change |
 
 - `data/events/` serves the detail read of `expand` in beat (the time), artshub
   (the `Schedule`) and whatson (the `WhatsonEvent`, shared with whatsonart). A
@@ -105,12 +105,17 @@ The sum of all `total` lines equals the row count at the end.
 | Field   | Value                                                          |
 | ------- | -------------------------------------------------------------- |
 | `index` | the emit count of the member. The page ignores it              |
-| `gig`   | the whole `Gig`, with its start time                           |
+| `gig`   | the whole `Gig`, with its start time and its `hours` text      |
 | `venue` | the whole `Venue` object, or null                              |
 | `error` | the reason for a failed venue read. Absent when the read works |
 
 The `gig` part holds a field `venue`, which is the venue name text. The
 top-level `venue` is the address data.
+
+`time` is the start time of a session, so the page sorts a row by it.
+`hours` is the text that the table shows for a run, with the days that it
+applies to, for example `Wed - Fri 11am - 5pm`. It is null for a source
+that has no opening hours, and the table shows `time` then.
 
 ## The page
 

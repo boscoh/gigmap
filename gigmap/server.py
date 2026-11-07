@@ -110,6 +110,11 @@ VENUE_FAILURE_TEXT = "the venue lookup failed"
 # This header makes nginx pass each line to the page at once.
 STREAM_HEADERS = {"X-Accel-Buffering": "no"}
 
+# The page holds the whole app, so a browser keeps no copy. Without this
+# header a browser can show the app of an older deploy, and a new field of
+# the gig never appears.
+PAGE_HEADERS = {"Cache-Control": "no-cache"}
+
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -259,14 +264,16 @@ async def index(request: Request) -> HTMLResponse:
     """Serve the landing page, or the page of one source."""
     path = request.url.path
     if not path.strip("/"):
-        return HTMLResponse(LANDING_FILE.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            LANDING_FILE.read_text(encoding="utf-8"), headers=PAGE_HEADERS
+        )
     name = page_source_name(path)
     info = SOURCE_INFO[name]
     html = (PACKAGE_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace(SOURCE_TITLE_TOKEN, info.title)
     html = html.replace(SOURCE_INFO_TOKEN, info.model_dump_json())
     return HTMLResponse(
-        html.replace(SOURCE_API_BASE_TOKEN, api_prefix(name))
+        html.replace(SOURCE_API_BASE_TOKEN, api_prefix(name)), headers=PAGE_HEADERS
     )
 
 

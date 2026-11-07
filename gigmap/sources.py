@@ -84,10 +84,14 @@ class Gig(BaseModel):
     A scalar field is None when the site does not show the value. A list
     field is empty when the site does not show the value. The `time` field
     comes from the gig detail page, not from the gig guide page.
-    The `ticket` field holds the ticket data of one performance. It is None
-    when the site reports no ticket, no price, and no state. A source owns
-    the `state` words and the `label` text of its ticket; the `group` field
-    is the shared value of every source.
+    The `hours` field holds the text of the opening hours of a run, with
+    the days that it applies to, for example `Wed - Sat 11am - 5pm`. The page
+    shows it in the time column of a table. The `time` field stays the
+    start time, so the page sorts a row by it. The `ticket` field holds the
+    ticket data of one performance. It is
+    None when the site reports no ticket, no price, and no state. A source
+    owns the `state` words and the `label` text of its ticket; the `group`
+    field is the shared value of every source.
     """
 
     artist: str | None = None
@@ -102,6 +106,7 @@ class Gig(BaseModel):
     image_url: str | None = None
     image_alt: str | None = None
     time: str | None = None
+    hours: str | None = None
 
 
 class Hours(BaseModel):

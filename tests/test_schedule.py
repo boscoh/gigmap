@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from gigmap.schedule import extract_schedule, fit_dates
+from gigmap.schedule import days_text, extract_schedule, fit_dates
 from gigmap.sources import Hours, Schedule
 
 
@@ -73,19 +73,55 @@ RUN = Schedule(
     hours=[Hours(days=[2, 3, 4], opens="11:00", closes="17:00"), Hours(days=[5], opens="13:00", closes="17:00")],
 )
 FIT = [
-    (RUN, "2026-11-05", "2026-11-05", (True, "11:00am")),  # Thursday
-    (RUN, "2026-11-07", "2026-11-07", (True, "1:00pm")),  # Saturday
-    (RUN, "2026-11-02", "2026-11-02", (False, None)),  # Monday
-    (RUN, "2026-11-08", "2026-11-08", (False, None)),  # Sunday
-    (RUN, "2026-11-02", "2026-11-05", (True, "11:00am")),  # first open date: Wednesday
-    (RUN, "2026-12-14", "2026-12-14", (False, None)),  # after the run
-    (RUN, "2026-10-01", "2026-12-31", (True, "1:00pm")),  # long range: starts Sat 31 Oct
-    (Schedule(), "2026-11-02", "2026-11-02", (True, None)),  # no schedule
-    (Schedule(days=[1], hours=[]), "2026-11-02", "2026-11-02", (False, None)),
-    (Schedule(days=[0], hours=[Hours(days=[0], opens="00:30", closes="23:00")]), "2026-11-02", "2026-11-02", (True, "12:30am")),
+    # One day: the hours of that day alone, because the page names the day.
+    (RUN, "2026-11-05", "2026-11-05", (True, "11:00am", "11am - 5pm")),  # Thursday
+    (RUN, "2026-11-07", "2026-11-07", (True, "1:00pm", "1pm - 5pm")),  # Saturday
+    (RUN, "2026-11-02", "2026-11-02", (False, None, None)),  # Monday
+    (RUN, "2026-11-08", "2026-11-08", (False, None, None)),  # Sunday
+    (RUN, "2026-12-14", "2026-12-14", (False, None, None)),  # after the run
+    # Many days: the hours text names its days.
+    (
+        RUN,
+        "2026-11-02",
+        "2026-11-05",
+        (True, "11:00am", "Wed - Fri 11am - 5pm, Sat 1pm - 5pm"),
+    ),  # first open date: Wednesday
+    (
+        RUN,
+        "2026-10-01",
+        "2026-12-31",
+        (True, "1:00pm", "Wed - Fri 11am - 5pm, Sat 1pm - 5pm"),
+    ),  # long range: starts Sat 31 Oct
+    (Schedule(), "2026-11-02", "2026-11-02", (True, None, None)),  # no schedule
+    (Schedule(days=[1], hours=[]), "2026-11-02", "2026-11-02", (False, None, None)),
+    (
+        Schedule(days=[0], hours=[Hours(days=[0], opens="00:30", closes="23:00")]),
+        "2026-11-02",
+        "2026-11-02",
+        (True, "12:30am", "12:30am - 11pm"),
+    ),
+    (
+        Schedule(days=ALL, hours=[H(ALL, "10:00", "17:00")]),
+        "2026-11-02",
+        "2026-11-04",
+        (True, "10:00am", "daily 10am - 5pm"),
+    ),
 ]
 
 
 @pytest.mark.parametrize("schedule, start, end, want", FIT)
 def test_fit_dates(schedule, start, end, want):
     assert fit_dates(schedule, start, end) == want
+
+
+DAYS = [
+    ([2, 3, 4], "Wed - Fri"),
+    ([2, 3, 4, 5], "Wed - Sat"),
+    ([0, 4], "Mon, Fri"),
+    ([0, 1, 2, 3, 4, 5, 6], "daily"),
+]
+
+
+@pytest.mark.parametrize("days, want", DAYS)
+def test_days_text(days, want):
+    assert days_text(days) == want

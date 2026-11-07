@@ -289,6 +289,7 @@ def test_the_event_line_holds_every_gig_field(
         "image_url": None,
         "image_alt": None,
         "time": "8:30pm",
+        "hours": None,
     }
     assert ("candidates", "2026-10-01", "2026-10-02") in fake.calls
 

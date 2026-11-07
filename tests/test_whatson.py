@@ -162,22 +162,23 @@ def test_the_session_parse_needs_a_day_in_the_range() -> None:
     assert whatson.session_dates("Sat 7 Nov", "2026-11-08", "2026-11-08") == []
 
 
-def test_the_time_text_strips_the_end_time() -> None:
-    assert whatson.time_text("7:30pm - 9:45pm") == "7:30pm"
-    assert whatson.time_text("9am - 10am") == "9am"
-    assert whatson.time_text(None) is None
+def test_the_time_pair_holds_the_start_and_the_end() -> None:
+    assert whatson.time_pair("7:30pm - 9:45pm") == ("19:30", "21:45")
+    assert whatson.time_pair("9am - 10am") == ("09:00", "10:00")
+    assert whatson.time_pair("1:00pm") == ("13:00", None)
+    assert whatson.time_pair(None) == (None, None)
 
 
 def test_a_ticketed_event_holds_one_gig_per_session_day() -> None:
     page = BeautifulSoup(TICKETED_EVENT, "lxml")
     sessions = whatson.parse_sessions(page)
-    assert [day for day, _ in sessions][:2] == ["Sat 7 Nov", "Sun 8 Nov"]
+    assert [day for day, _, _ in sessions][:2] == ["Sat 7 Nov", "Sun 8 Nov"]
 
 
-def test_a_day_with_two_shows_keeps_the_first_time() -> None:
+def test_a_day_with_two_shows_keeps_the_first_session() -> None:
     page = BeautifulSoup(TICKETED_EVENT, "lxml")
-    sessions = dict(whatson.parse_sessions(page))
-    assert sessions["Sun 8 Nov"] == "1:00pm"
+    sessions = {day: (start, end) for day, start, end in whatson.parse_sessions(page)}
+    assert sessions["Sun 8 Nov"] == ("13:00", "14:30")
 
 
 def test_the_ticketed_event_holds_the_ticket_and_the_venue() -> None:
@@ -346,10 +347,13 @@ def expand_ranges(
     return asyncio.run(run())
 
 
-def test_read_event_gives_the_raw_session_pairs() -> None:
+def test_read_event_gives_the_raw_session_triples() -> None:
     event = whatson.read_event(TICKETED_EVENT)
     assert event is not None
-    assert event.sessions[:2] == [("Sat 7 Nov", "7:30pm"), ("Sun 8 Nov", "1:00pm")]
+    assert event.sessions[:2] == [
+        ("Sat 7 Nov", "19:30", "21:45"),
+        ("Sun 8 Nov", "13:00", "14:30"),
+    ]
     assert event.venue_name == "The Butterfly Club"
     assert whatson.read_event("<html></html>") is None
 

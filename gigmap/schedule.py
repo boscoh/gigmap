@@ -166,22 +166,94 @@ def clock_text(hhmm: str) -> str:
     return f"{hour % 12 or 12}:{minute}{'pm' if hour >= 12 else 'am'}"
 
 
-def fit_dates(schedule: Schedule, start_date: str, end_date: str) -> tuple[bool, str | None]:
-    """Return whether the event runs in the chosen dates, and its time then.
+def short_clock(hhmm: str) -> str:
+    """Return "13:00" as "1pm" and "13:30" as "1:30pm".
 
-    The dates are ISO strings. The event runs when one chosen date is inside
-    its text range and on one of its days. The time is the opening time of
-    the first such date. An event with no days, or no hours, has no time.
+    The hours text of a run is short, because a table column is narrow.
+    """
+    hour, minute = int(hhmm[:2]), hhmm[3:]
+    minutes = "" if minute == "00" else f":{minute}"
+    return f"{hour % 12 or 12}{minutes}{'pm' if hour >= 12 else 'am'}"
+
+
+DAYS_TEXT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def days_text(days: list[int]) -> str:
+    """Return the day names of one day list, with the runs collapsed.
+
+    `[2, 3, 4]` gives `Wed - Fri`. All seven days give `daily`.
+    """
+    wanted = sorted(set(days))
+    if len(wanted) == 7:
+        return "daily"
+    runs: list[tuple[int, int]] = []
+    for day in wanted:
+        if runs and day == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], day)
+        else:
+            runs.append((day, day))
+    return ", ".join(
+        DAYS_TEXT[first]
+        if first == last
+        else f"{DAYS_TEXT[first]} - {DAYS_TEXT[last]}"
+        for first, last in runs
+    )
+
+
+def span_text(start: str | None, end: str | None) -> str | None:
+    """Return `11am - 5pm` for one start and one end in `HH:MM` form.
+
+    A session with no end has no span, so the page shows the start alone.
+    """
+    if not start or not end:
+        return None
+    return f"{short_clock(start)} - {short_clock(end)}"
+
+
+def fit_dates(
+    schedule: Schedule, start_date: str, end_date: str
+) -> tuple[bool, str | None, str | None]:
+    """Return whether the run is open in the chosen dates, its start and its hours.
+
+    The dates are ISO strings. The run is open when one chosen date is inside
+    its text range and on one of its days. The start time is the opening time
+    of the first such date, so the page sorts the row by it. The hours text
+    names the days that it applies to: no day for a one-day range, because
+    the page names that day, and the weekday names for a longer range. A run
+    with no hours has no start time and no hours text.
     """
     low, high = date.fromisoformat(start_date), date.fromisoformat(end_date)
     if schedule.date_start:
         low = max(low, date.fromisoformat(schedule.date_start))
     if schedule.date_end:
         high = min(high, date.fromisoformat(schedule.date_end))
+    open_day: date | None = None
     # Seven dates show every weekday, so a long range costs no more.
     for offset in range(min(7, (high - low).days + 1)):
-        weekday = (low + timedelta(days=offset)).weekday()
-        if not schedule.days or weekday in schedule.days:
-            opens = next((h.opens for h in schedule.hours if weekday in h.days), None)
-            return True, clock_text(opens) if opens else None
-    return False, None
+        day = low + timedelta(days=offset)
+        if not schedule.days or day.weekday() in schedule.days:
+            open_day = day
+            break
+    if open_day is None:
+        return False, None, None
+    starts = [h.opens for h in schedule.hours if open_day.weekday() in h.days]
+    start = clock_text(starts[0]) if starts else None
+    if low == high:
+        text = next(
+            (
+                span_text(h.opens, h.closes)
+                for h in schedule.hours
+                if low.weekday() in h.days
+            ),
+            None,
+        )
+    else:
+        text = (
+            ", ".join(
+                f"{days_text(h.days)} {span_text(h.opens, h.closes)}"
+                for h in schedule.hours
+            )
+            or None
+        )
+    return True, start, text

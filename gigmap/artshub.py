@@ -48,7 +48,10 @@ The event page holds a long text in `div.the-content` and an `Event Starts`
 date. `gigs` reads the page of each event, 5 at a time, and passes the text to
 `extract_schedule`. `fit_dates` then checks the chosen dates against the days of
 the event. A gig that is closed on all chosen dates leaves the list. For an open
-gig, `time` is the opening time of the first open date, for example `1:00pm`.
+gig, `time` is the opening time of the first open date, for example `1:00pm`,
+so the page sorts the row by it. `hours` is the opening hours text with the
+days that it applies to, for example `Wed - Fri 11am - 5pm`. A one-day range
+gives the hours of that day alone, because the page names the day.
 A gig with no readable page or no schedule stays, with no time.
 
 The tests
@@ -393,7 +396,7 @@ class ArtshubSource:
         start_date: str,
         end_date: str,
     ) -> list[sources.Gig]:
-        """Return the gig with its opening time, or [] when it is not open.
+        """Return the gig with its start time and hours, or [] when it is closed.
 
         The event page holds the days and hours. A gig that has no readable
         page or no schedule stays in the list, with no time.
@@ -413,8 +416,8 @@ class ArtshubSource:
             schedule = extract_schedule(body, reference)
             if page is not None:
                 EVENTS.save(key, schedule)
-        keep, time = fit_dates(schedule, start_date, end_date)
-        return [gig.model_copy(update={"time": time})] if keep else []
+        keep, time, hours = fit_dates(schedule, start_date, end_date)
+        return [gig.model_copy(update={"time": time, "hours": hours})] if keep else []
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""
