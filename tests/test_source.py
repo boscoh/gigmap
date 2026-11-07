@@ -97,6 +97,16 @@ def test_url_key_uses_the_last_path_segment() -> None:
     assert sources.url_key("https://beat.com.au/") == "page"
 
 
+def test_a_run_of_one_day_holds_no_end_date() -> None:
+    gig = sources.Gig(date="2026-11-14", end_date="2026-11-14")
+    assert gig.end_date is None
+
+
+def test_a_run_of_two_years_keeps_its_end_date() -> None:
+    gig = sources.Gig(date="2026-11-14", end_date="2027-11-14")
+    assert gig.end_date == "2027-11-14"
+
+
 def test_a_beat_ticket_holds_the_price_and_the_link() -> None:
     ticket = beat.parse_ticket("$27.78", "https://example.test/buy")
 

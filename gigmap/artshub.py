@@ -243,7 +243,7 @@ def parse_item(item: ET.Element) -> sources.Gig | None:
         artist=artist,
         detail_url=text(item.findtext("link")),
         date=start,
-        end_date=end if end and end != start else None,
+        end_date=end,
         venue=name or address,
         venue_url=venue_url(name, address),
         genres=split_names(item.findtext("art_forms")),

@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Protocol
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SourceInfo(BaseModel):
@@ -107,6 +107,13 @@ class Gig(BaseModel):
     image_alt: str | None = None
     time: str | None = None
     hours: str | None = None
+
+    @model_validator(mode="after")
+    def _drop_the_end_of_a_one_day_run(self) -> "Gig":
+        """A run of one day needs no end date. The dates carry the year."""
+        if self.end_date == self.date:
+            self.end_date = None
+        return self
 
 
 class Hours(BaseModel):
