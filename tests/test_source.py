@@ -559,6 +559,26 @@ def test_the_venue_is_cached_only_with_coordinates(
 
     assert fake.calls.count(("venue", "https://beat.com.au/directory/venue/")) == 1
 
+def test_a_shared_venue_file_keeps_the_asked_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two venue urls with one address share a file. The page matches on the url."""
+    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
+    source = stores.CachedSource(FakeSource(), stores.DataStores(server.data_dir))
+
+    async def found(name: str | None, address: str | None) -> dict:
+        return {"latitude": -37.8, "longitude": 144.9}
+
+    monkeypatch.setattr(geocode, "geocode_venue", found)
+
+    async def run() -> None:
+        await source.venue("https://beat.com.au/a/venue/")
+        second = await source.venue("https://beat.com.au/b/venue/")
+        assert second.venue_url == "https://beat.com.au/b/venue/"
+        assert second.latitude == -37.8
+
+    asyncio.run(run())
+
 
 def test_a_venue_with_no_place_is_read_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

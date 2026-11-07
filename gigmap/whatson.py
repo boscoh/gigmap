@@ -211,7 +211,8 @@ def venue_url(name: str | None, street: str | None, locality: str | None, postal
     url, so the address is the last part.
     """
     name = quote(name or "", safe="")
-    street = text(street) or ""
+    # The site can end the street with a comma, which gives `Street,, Suburb`.
+    street = (text(street) or "").strip(" ,")
     locality = text(locality) or ""
     postal = text(postal) or ""
     rest = " ".join(part for part in (locality, postal) if part)

@@ -56,3 +56,4 @@ def test_the_name_query_runs_before_the_address(monkeypatch: pytest.MonkeyPatch)
 
     assert order[0] == "ACMI, Melbourne, Australia"
     assert order[1] == "Flinders St, Melbourne 3000, Australia"
+    assert order[2] == "Melbourne, Victoria, Australia"

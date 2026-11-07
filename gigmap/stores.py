@@ -137,7 +137,7 @@ VENUES_VERSION = "v1"
 # The miss files carry the version of the geocode query, because a query
 # change turns a cached miss into a wrong answer. The hits keep their
 # place, so only the misses move. Raise it with a change to the query.
-MISS_VERSION = "v3"
+MISS_VERSION = "v4"
 
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.
@@ -473,11 +473,13 @@ class CachedSource:
         """
         key = sources.url_key(venue_url)
         hit = self._stores.venues.load(key)
+        # The key is the address, so two venue names at one address share a
+        # file. The page matches on venue_url, so give back the asked url.
         if hit is not None:
-            return hit
+            return hit.model_copy(update={"venue_url": venue_url})
         missed = self._stores.misses.load(key)
         if missed is not None:
-            return missed
+            return missed.model_copy(update={"venue_url": venue_url})
         venue = await geocode.enrich_venue(await self._source.venue(venue_url))
         if venue.latitude is not None and venue.longitude is not None:
             self._stores.venues.save(key, venue)

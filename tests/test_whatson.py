@@ -233,6 +233,12 @@ def test_no_venue_holds_no_address() -> None:
     assert whatson.venue_url(None, None, None, None) is None
 
 
+def test_a_trailing_street_comma_is_dropped() -> None:
+    url = whatson.venue_url("XYZ", "Batman's Hill Drive Side,", "Docklands", "3008")
+    assert url is not None
+    assert whatson.decode_venue(url) == ("XYZ", "Batman's Hill Drive Side, Docklands 3008")
+
+
 def test_a_foreign_address_is_not_a_venue() -> None:
     assert whatson.decode_venue("https://example.com/venue/A/B/") is None
     assert whatson.decode_venue(f"{whatson.SITE_URL}/things-to-do/x/") is None

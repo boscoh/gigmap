@@ -133,6 +133,10 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
         queries.append(name_query(name, address))
     if address:
         queries.append(address_query(address))
+    suburb = locality(address)
+    if suburb:
+        # ponytail: the suburb centre, not the venue. Better than no marker.
+        queries.append(f"{suburb}, Victoria, Australia")
     for query in queries:
         place = await geocode(query)
         if place is not None:
