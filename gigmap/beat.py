@@ -68,7 +68,8 @@ HEADERS = {
 SERVER_ERROR_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 1.0
 
-# The detail reads hold the most reads, so a request runs five at a time.
+# Every read of beat.com.au runs under this pool: the detail page and the
+# venue page.
 DETAIL_CONCURRENCY = 5
 # One pool for the whole app, so every request shares the limit.
 DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
@@ -346,4 +347,6 @@ class BeatSource:
         """Return the address data of one venue."""
         if VENUE_URL_RE.fullmatch(venue_url) is None:
             raise sources.SourceUrlError(VENUE_URL_HINT)
-        return parse_venue(await self._html(venue_url), venue_url)
+        async with DETAIL_POOL:
+            html = await self._html(venue_url)
+        return parse_venue(html, venue_url)

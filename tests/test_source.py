@@ -785,3 +785,20 @@ def test_expand_skips_a_url_that_is_not_a_detail_page() -> None:
     for gig in gigs:
         assert asyncio.run(source.expand(gig, "2026-10-01", "2026-10-02")) == [gig]
     assert calls == []
+
+
+def test_the_venue_read_holds_the_beat_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Beat has one cap of five for every read of its own site."""
+    monkeypatch.setattr(beat, "DETAIL_POOL", asyncio.Semaphore(1))
+    source = beat.BeatSource()
+    seen: list[bool] = []
+
+    async def html(url: str, params: dict[str, str] | None = None) -> str:
+        seen.append(beat.DETAIL_POOL.locked())
+        return "<html></html>"
+
+    source._html = html  # type: ignore[method-assign]
+
+    asyncio.run(source.venue(VENUE_URL))
+
+    assert seen == [True]
