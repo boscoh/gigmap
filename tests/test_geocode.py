@@ -1,5 +1,9 @@
 """Tests for the geocoder query rules."""
 
+import asyncio
+
+import pytest
+
 from gigmap import geocode
 
 
@@ -35,3 +39,20 @@ def test_the_locality_drops_the_state_and_the_postcode() -> None:
     assert geocode.locality("1 High St, Bundoora Victoria") == "Bundoora"
     assert geocode.locality("1 High St") is None
     assert geocode.locality(None) is None
+
+
+
+def test_the_name_query_runs_before_the_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The street answer of ACMI is the railway station, not the museum."""
+    order: list[str] = []
+
+    async def geocode_query(query: str) -> None:
+        order.append(query)
+        return None
+
+    monkeypatch.setattr(geocode, "geocode", geocode_query)
+
+    asyncio.run(geocode.geocode_venue("ACMI", "Flinders St, Melbourne 3000"))
+
+    assert order[0] == "ACMI, Melbourne, Australia"
+    assert order[1] == "Flinders St, Melbourne 3000, Australia"

@@ -123,12 +123,16 @@ def name_query(name: str, address: str | None) -> str:
 
 
 async def geocode_venue(name: str | None, address: str | None) -> dict | None:
-    """Try the address, then the venue name, and return the first place."""
+    """Try the venue name, then the address, and return the first place.
+
+    The name names the place itself, so it wins: `ACMI` is the museum,
+    while its street answer is the railway station. A name that finds
+    no place falls back to the address, which pins the street."""
     queries = []
-    if address:
-        queries.append(address_query(address))
     if name:
         queries.append(name_query(name, address))
+    if address:
+        queries.append(address_query(address))
     for query in queries:
         place = await geocode(query)
         if place is not None:

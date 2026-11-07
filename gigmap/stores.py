@@ -137,7 +137,7 @@ VENUES_VERSION = "v1"
 # The miss files carry the version of the geocode query, because a query
 # change turns a cached miss into a wrong answer. The hits keep their
 # place, so only the misses move. Raise it with a change to the query.
-MISS_VERSION = "v2"
+MISS_VERSION = "v3"
 
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.
