@@ -213,7 +213,7 @@ def api_prefix(name: str) -> str:
     return f"/api/{name}"
 
 
-async def source_dependency(request: Request) -> AsyncIterator[dict[str, stores.CachedSource]]:
+async def source_dependency(request: Request) -> AsyncIterator[dict[str, stores.CachedGigSource]]:
     """Give the cached members for the request, then close them.
 
     A group page (`gig`, `art`) opens every member of its group. Each member
@@ -222,7 +222,7 @@ async def source_dependency(request: Request) -> AsyncIterator[dict[str, stores.
     name = api_source_name(request.url.path)
     names = GROUPS.get(name, (name,))
     async with AsyncExitStack() as stack:
-        members: dict[str, stores.CachedSource] = {}
+        members: dict[str, stores.CachedGigSource] = {}
         for member in names:
             site = await stack.enter_async_context(SOURCE_FACTORIES[member]())
             members[member] = stores.CachedSource(
@@ -231,7 +231,7 @@ async def source_dependency(request: Request) -> AsyncIterator[dict[str, stores.
         yield members
 
 
-MembersDep = Annotated[dict[str, stores.CachedSource], Depends(source_dependency)]
+MembersDep = Annotated[dict[str, stores.CachedGigSource], Depends(source_dependency)]
 
 
 @app.exception_handler(sources.SourceError)
@@ -367,7 +367,7 @@ async def event_lines(
 
 
 async def read_list(
-    member: stores.CachedSource, start_date: str, end_date: str
+    member: stores.CachedGigSource, start_date: str, end_date: str
 ) -> tuple[list[sources.Gig], bool]:
     """Return the warm day file and True, or the candidates and False."""
     hit = member.cached_gigs(start_date, end_date)
@@ -401,7 +401,7 @@ async def wait_for_a_list(
 
 
 async def merged_lines(
-    members: dict[str, stores.CachedSource],
+    members: dict[str, stores.CachedGigSource],
     lists: dict[str, asyncio.Task[tuple[list[sources.Gig], bool]]],
     start_date: str,
     end_date: str,
@@ -415,7 +415,7 @@ async def merged_lines(
     """
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-    async def pump(name: str, member: stores.CachedSource) -> None:
+    async def pump(name: str, member: stores.CachedGigSource) -> None:
         running = 0  # the sum of the total lines of this member
         sent = 0  # the gig lines of this member
 

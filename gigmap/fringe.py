@@ -100,7 +100,6 @@ transport, so they do not touch the live site.
 """
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -796,17 +795,6 @@ class FringeSource:
             self._venues = index
             return index
 
-    async def page(self, start_date: str, end_date: str) -> str:
-        """Return the raw day payloads of a range as one JSON text.
-
-        The site serves one page for each day, so the raw page text of a
-        range is the array of those day payloads.
-        """
-        days = days_of_range(start_date, end_date)
-        payloads = await gather_limited(
-            [lambda day=day: self._diary(day) for day in days],
-        )
-        return json.dumps(payloads)
 
     async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the candidates of a date range. One gig is one performance."""

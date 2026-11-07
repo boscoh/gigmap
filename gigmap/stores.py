@@ -76,7 +76,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Generic, NamedTuple, TypeVar
+from typing import Generic, NamedTuple, Protocol, TypeVar
 
 from pydantic import TypeAdapter
 
@@ -98,6 +98,13 @@ STALE_SUBDIRS = ("gigs",)
 # removes it on the usual rules.
 DAYS_VERSION = "v11"
 
+# The venue files carry a version too, because the cleanup never removes
+# them. Raise it when a venue read or the geocode query changes.
+VENUES_VERSION = "v1"
+
+# A venue with no place is tried again after this wait. Nominatim answers
+# nothing for some venues, and a query on each request is not polite.
+MISS_CACHE_SECONDS = 7 * 86400
 # The day files are named gigmap_<source>_<version>_<start>_<end>.json.
 # A file of an older layout has no source part or no version part, and the
 # cleanup still removes it.
@@ -150,11 +157,6 @@ def remove_tree(path: Path, dry_run: bool) -> int:
     return size
 
 
-def default_filename(key: str) -> str:
-    """Return the file name of one key."""
-    return f"{key}.json"
-
-
 class JsonCache(Generic[M]):
     """One JSON file cache on disk."""
 
@@ -164,7 +166,7 @@ class JsonCache(Generic[M]):
         subdir: str,
         adapter: TypeAdapter[M],
         *,
-        filename: Callable[[str], str] = default_filename,
+        filename: Callable[[str], str],
         max_age: float | None = None,
     ) -> None:
         self._root = root
@@ -218,7 +220,7 @@ class JsonCache(Generic[M]):
 
 
 class DataStores:
-    """The two JSON caches of one data directory, and its cleanup."""
+    """The three JSON caches of one data directory, and its cleanup."""
 
     def __init__(self, data_dir: Callable[[], Path], namespace: str = "") -> None:
         # Two sources can answer for the same day range, and the two answers
@@ -239,7 +241,16 @@ class DataStores:
             data_dir,
             VENUES_SUBDIR,
             TypeAdapter(sources.Venue),
-            filename=lambda key: f"{prefix}{key}.json",
+            filename=lambda key: f"{prefix}{VENUES_VERSION}_{key}.json",
+        )
+        # A venue with no place is not a venue file, because that file must
+        # keep its place. This cache holds the answer for a while instead.
+        self.misses = JsonCache(
+            data_dir,
+            VENUES_SUBDIR,
+            TypeAdapter(sources.Venue),
+            filename=lambda key: f"{prefix}miss_{key}.json",
+            max_age=MISS_CACHE_SECONDS,
         )
 
     def clean(self, now: float, dry_run: bool) -> CleanReport:
@@ -294,8 +305,30 @@ class DataStores:
 
         return CleanReport(days=day_count, stale=stale, size=size, skipped=skipped)
 
+
+class CachedGigSource(sources.GigSource, Protocol):
+    """A source behind the day-file cache. The server holds this shape.
+
+    `sources.GigSource` states the three reads. This shape adds the two
+    calls that the cache owns, so the server never asks for a method that
+    a bare source does not have.
+    """
+
+    # pi-lens-ignore: no-ellipsis-body
+    def cached_gigs(self, start_date: str, end_date: str) -> list[sources.Gig] | None:
+        """Return the day file of a range, or None."""
+        ...
+
+    # pi-lens-ignore: no-ellipsis-body
+    def save_gigs(
+        self, start_date: str, end_date: str, gigs: list[sources.Gig]
+    ) -> None:
+        """Save the day file of a range."""
+        ...
+
+
 class CachedSource:
-    """Cache the reads of one source on disk. Implement `GigSource`."""
+    """Cache the reads of one source on disk. Implement `CachedGigSource`."""
 
     def __init__(
         self,
@@ -323,12 +356,21 @@ class CachedSource:
         self._stores.days.save(f"{start_date}_{end_date}", gigs)
 
     async def venue(self, venue_url: str) -> sources.Venue:
-        """Read the venue, add the geocode, and cache it when complete."""
+        """Read the venue, add the geocode, and cache the answer.
+
+        A venue with no place goes to the miss cache, so the app does not ask
+        the source and Nominatim again on each request for a week.
+        """
         key = sources.url_key(venue_url)
         hit = self._stores.venues.load(key)
         if hit is not None:
             return hit
+        missed = self._stores.misses.load(key)
+        if missed is not None:
+            return missed
         venue = await geocode.enrich_venue(await self._source.venue(venue_url))
         if venue.latitude is not None and venue.longitude is not None:
             self._stores.venues.save(key, venue)
+        else:
+            self._stores.misses.save(key, venue)
         return venue

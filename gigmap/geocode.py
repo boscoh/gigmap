@@ -9,6 +9,7 @@ See https://operations.osmfoundation.org/policies/nominatim/
 
 import asyncio
 import logging
+import re
 import time
 
 import httpx
@@ -90,13 +91,39 @@ def address_query(address: str) -> str:
 
 
 
+THE_RE = re.compile(r"^the\s+", re.IGNORECASE)
+STATE_RE = re.compile(r"\b(VIC|Victoria)\b", re.IGNORECASE)
+POSTCODE_RE = re.compile(r"\b\d{4}\b")
+
+
+def locality(address: str | None) -> str | None:
+    """Return the suburb of one address, or None.
+
+    The suburb sits in the last comma part, before the state and the
+    postcode. The name query needs it: `Curtin, Carlton` finds the venue,
+    and `Curtin, Melbourne` finds a street 10 km away.
+    """
+    if "," not in (address or ""):
+        # A street with no comma holds no separate suburb.
+        return None
+    part = (address or "").split(",")[-1]
+    suburb = POSTCODE_RE.sub("", STATE_RE.sub("", part))
+    return suburb.strip(" ,") or None
+
+
+def name_query(name: str, address: str | None) -> str:
+    """Return the query for one venue name, with no leading `The`."""
+    bare = THE_RE.sub("", name).strip() or name
+    return f"{bare}, {locality(address) or 'Melbourne'}, Australia"
+
+
 async def geocode_venue(name: str | None, address: str | None) -> dict | None:
     """Try the address, then the venue name, and return the first place."""
     queries = []
     if address:
         queries.append(address_query(address))
     if name:
-        queries.append(f"{name}, Melbourne, Australia")
+        queries.append(name_query(name, address))
     for query in queries:
         place = await geocode(query)
         if place is not None:

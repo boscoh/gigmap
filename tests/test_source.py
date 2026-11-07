@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import os
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -527,7 +529,7 @@ def test_the_venue_is_cached_only_with_coordinates(
     assert fake.calls.count(("venue", "https://beat.com.au/directory/venue/")) == 1
 
 
-def test_a_venue_without_coordinates_is_not_cached(
+def test_a_venue_with_no_place_is_read_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
@@ -540,12 +542,41 @@ def test_a_venue_without_coordinates_is_not_cached(
     monkeypatch.setattr(geocode, "geocode_venue", missing)
 
     async def run() -> None:
-        await source.venue("https://beat.com.au/directory/venue/")
-        await source.venue("https://beat.com.au/directory/venue/")
+        first = await source.venue("https://beat.com.au/directory/venue/")
+        second = await source.venue("https://beat.com.au/directory/venue/")
+        assert first.latitude is None
+        assert second.latitude is None
 
     asyncio.run(run())
 
-    assert fake.calls.count(("venue", "https://beat.com.au/directory/venue/")) == 2
+    assert fake.calls.count(("venue", "https://beat.com.au/directory/venue/")) == 1
+
+
+def test_a_venue_with_no_place_is_tried_again_after_a_week(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(server.DATA_DIR_ENV, str(tmp_path))
+    data = stores.DataStores(server.data_dir)
+    fake = FakeSource()
+    source = stores.CachedSource(fake, data)
+
+    async def missing(name: str | None, address: str | None) -> None:
+        return None
+
+    monkeypatch.setattr(geocode, "geocode_venue", missing)
+    url = "https://beat.com.au/directory/venue/"
+
+    async def run() -> None:
+        await source.venue(url)
+        # Age the miss past the wait, so the app reads the venue again.
+        miss = data.misses.path(sources.url_key(url))
+        old = time.time() - stores.MISS_CACHE_SECONDS - 1
+        os.utime(miss, (old, old))
+        await source.venue(url)
+
+    asyncio.run(run())
+
+    assert fake.calls.count(("venue", url)) == 2
 
 
 class _FakeResponse:

@@ -308,7 +308,7 @@ class BeatSource:
                 await asyncio.sleep(RETRY_DELAY_SECONDS * attempts)
         raise sources.SourceError(f"beat.com.au answered status {status}")
 
-    async def page(self, start_date: str, end_date: str) -> str:
+    async def _page(self, start_date: str, end_date: str) -> str:
         """Return the gig guide page of a date range."""
         params = {
             "search_term": "",
@@ -323,7 +323,7 @@ class BeatSource:
 
     async def candidates(self, start_date: str, end_date: str) -> list[sources.Gig]:
         """Return the listed gigs. `expand` adds the time."""
-        return parse_gigs(await self.page(start_date, end_date))
+        return parse_gigs(await self._page(start_date, end_date))
 
     async def expand(
         self, gig: sources.Gig, start_date: str, end_date: str

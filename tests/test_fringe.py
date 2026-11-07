@@ -628,18 +628,16 @@ def test_a_foreign_venue_url_is_rejected() -> None:
         read_venue("https://www.melbournefringe.com.au/whats-on/events/x/", site)
 
 
-def test_the_page_read_holds_one_entry_for_each_day() -> None:
+def test_a_range_reads_one_diary_page_for_each_day() -> None:
+    """The site serves one page for each day, so a range reads each day."""
     site = FakeSite()
     site.days = {"2026-10-17": day(diary_row())}
 
-    async def run() -> str:
-        async with fringe.FringeSource(site.transport()) as source:
-            return await source.page("2026-10-17", "2026-10-18")
+    gigs = site.read_gigs("2026-10-17", "2026-10-18")
 
-    payloads = json.loads(asyncio.run(run()))
-
-    assert len(payloads) == 2
-    assert payloads[0]["eventGroups"]
+    diary = [call for call in site.calls if call == ("POST", "/api/WhatsOn/DailyDiary")]
+    assert len(diary) == 2
+    assert [gig.date for gig in gigs] == ["2026-10-17"]
 
 
 def test_the_source_retries_a_server_error() -> None:
