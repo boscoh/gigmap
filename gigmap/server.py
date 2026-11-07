@@ -6,6 +6,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
@@ -128,6 +129,11 @@ STREAM_HEADERS = {"X-Accel-Buffering": "no"}
 PAGE_HEADERS = {"Cache-Control": "no-cache"}
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+MAX_RANGE_DAYS = 7
+
+# The flights in progress, by (source, start, end). A done callback removes
+# each key, so the dict holds in-flight keys only.
+_INFLIGHT: dict[tuple[str, str, str], asyncio.Task] = {}
 
 
 async def cleanup_loop() -> None:
@@ -269,6 +275,12 @@ def validate_dates(start_date: str, end_date: str) -> None:
             status_code=400,
             detail="end_date must not be before start_date",
         )
+    days = (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1
+    if days > MAX_RANGE_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"a range must not span more than {MAX_RANGE_DAYS} days",
+        )
 
 
 @page_router.get("/")
@@ -379,14 +391,27 @@ async def event_lines(
         await asyncio.gather(*reads, return_exceptions=True)
 
 
+async def fetch_once(
+    name: str, member: stores.CachedGigSource, start_date: str, end_date: str
+) -> list[sources.Gig]:
+    """Return the candidates; callers of one range share one fetch."""
+    key = (name, start_date, end_date)
+    task = _INFLIGHT.get(key)
+    if task is None:
+        task = asyncio.create_task(member.candidates(start_date, end_date))
+        _INFLIGHT[key] = task
+        task.add_done_callback(lambda _: _INFLIGHT.pop(key, None))
+    return await asyncio.shield(task)
+
+
 async def read_list(
-    member: stores.CachedGigSource, start_date: str, end_date: str
+    name: str, member: stores.CachedGigSource, start_date: str, end_date: str
 ) -> tuple[list[sources.Gig], bool]:
     """Return the warm day file and True, or the candidates and False."""
     hit = member.cached_gigs(start_date, end_date)
     if hit is not None:
         return hit, True
-    return await member.candidates(start_date, end_date), False
+    return await fetch_once(name, member, start_date, end_date), False
 
 
 async def wait_for_a_list(
@@ -506,7 +531,7 @@ async def event_stream(
     """Stream one line for each gig, when its time and venue are known."""
     validate_dates(start_date, end_date)
     lists = {
-        name: asyncio.create_task(read_list(member, start_date, end_date))
+        name: asyncio.create_task(read_list(name, member, start_date, end_date))
         for name, member in members.items()
     }
     await wait_for_a_list(lists)
