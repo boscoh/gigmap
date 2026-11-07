@@ -118,7 +118,7 @@ STALE_SUBDIRS = ("gigs",)
 # a gig holds, so the app never serves an answer of the older code. The
 # app then ignores each day file of the older number, and the cleanup
 # removes it on the usual rules.
-DAYS_VERSION = "v12"
+DAYS_VERSION = "v13"
 
 # The shape of a cached event parse. Raise this number with any change to
 # a parse that a source caches, because a cached value never sees a parser

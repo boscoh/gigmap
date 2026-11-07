@@ -53,9 +53,9 @@ A source splits a list read into two steps.
 
 | Cache          | Content                                        | Rule                                                                                      |
 | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` is `v12` in `gigmap/stores.py`             |
+| `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` in `gigmap/stores.py` names the shape      |
 | `data/venues/` | each venue with its coordinates                | kept while `VENUES_VERSION` matches. Saved only with coordinates                          |
-| `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` is `v2`. Bump it with any parser change |
+| `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` names the parse. Bump it with a change  |
 
 - `data/events/` serves the detail read of `expand` in beat (the time), artshub
   (the `Schedule`) and whatson (the `WhatsonEvent`, shared with whatsonart). A
