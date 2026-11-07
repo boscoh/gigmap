@@ -107,6 +107,26 @@ def test_a_run_of_two_years_keeps_its_end_date() -> None:
     assert gig.end_date == "2027-11-14"
 
 
+def test_a_schedule_drops_a_span_of_24_hours() -> None:
+    schedule = sources.Schedule(
+        days=[0, 1, 2], hours=[sources.Hours(days=[0, 1, 2], opens="00:00", closes="00:00")]
+    )
+    assert schedule.hours == []
+    assert schedule.days == []
+
+
+def test_a_schedule_keeps_its_other_days() -> None:
+    schedule = sources.Schedule(
+        days=[0, 1],
+        hours=[
+            sources.Hours(days=[0], opens="00:00", closes="00:00"),
+            sources.Hours(days=[1], opens="10:00", closes="16:00"),
+        ],
+    )
+    assert schedule.days == [1]
+    assert [(one.opens, one.closes) for one in schedule.hours] == [("10:00", "16:00")]
+
+
 def test_a_beat_ticket_holds_the_price_and_the_link() -> None:
     ticket = beat.parse_ticket("$27.78", "https://example.test/buy")
 

@@ -132,6 +132,18 @@ class Schedule(BaseModel):
     days: list[int] = Field(default_factory=list)
     hours: list[Hours] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _drop_a_span_of_24_hours(self) -> "Schedule":
+        """A span of 24 hours never closes, so it gives no clock.
+
+        A table of dates states `12am - 12am` for a work that is always
+        open, so the entry goes and the days come from the rest."""
+        kept = [h for h in self.hours if h.opens != h.closes]
+        if len(kept) != len(self.hours):
+            self.hours = kept
+            self.days = sorted({day for h in kept for day in h.days})
+        return self
+
 
 class Venue(BaseModel):
     """The address data of one venue, with the geocode.
