@@ -55,6 +55,7 @@ A source splits a list read into two steps.
 | -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `data/days/`   | the final `list[Gig]` of a range               | `DAYS_CACHE_SECONDS` (3 hours). `DAYS_VERSION` in `gigmap/stores.py` names the shape      |
 | `data/venues/` | each venue with its coordinates                | kept while `VENUES_VERSION` matches. Saved only with coordinates                          |
+| `data/venues/` | each miss: Nominatim has no place for the name  | kept while `MISS_VERSION` matches, or for `MISS_CACHE_SECONDS` (7 days)                   |
 | `data/events/` | the range-free parse of one event page, by url | `EVENTS_CACHE_SECONDS` (7 days). `EVENTS_VERSION` names the parse. Bump it with a change  |
 
 - `data/events/` serves the detail read of `expand` in beat (the time), artshub

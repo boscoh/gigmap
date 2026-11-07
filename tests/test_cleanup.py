@@ -246,14 +246,24 @@ def test_a_venue_file_of_an_old_shape_goes(data_dir: Path) -> None:
 
 
 def test_a_miss_file_goes_after_the_wait(data_dir: Path) -> None:
-    stale = write(data_dir / "venues" / "beat_miss_Playhouse.json", 8 * 86400)
-    fresh = write(data_dir / "venues" / "beat_miss_Hamer.json", 0)
+    stale = write(data_dir / "venues" / f"beat_miss_{stores.MISS_VERSION}_Playhouse.json", 8 * 86400)
+    fresh = write(data_dir / "venues" / f"beat_miss_{stores.MISS_VERSION}_Hamer.json", 0)
 
     report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
 
     assert report.venues == 1
     assert not stale.exists()
     assert fresh.exists()
+
+
+def test_a_miss_file_of_an_older_query_goes_now(data_dir: Path) -> None:
+    fresh = write(data_dir / "venues" / "beat_miss_v1_Hamer.json", 0)
+    bare = write(data_dir / "venues" / "beat_miss_Playhouse.json", 0)
+
+    report = stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+
+    assert report.venues == 2
+    assert not fresh.exists() and not bare.exists()
 
 
 def test_the_dry_run_keeps_an_old_venue_file(data_dir: Path) -> None:

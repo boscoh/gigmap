@@ -17,6 +17,8 @@ The data
       one event page, so a second range shares the read
     * `data/venues/<source>_<version>_<slug>.json` - the name, the address,
       and the coordinates of one venue
+    * `data/venues/<source>_miss_<version>_<slug>.json` - the answer that
+      Nominatim has no place for one venue, under the query version
 
     An old `data/gigs/` tree is removed by the cleanup. The app writes no
     gig file now, because each source reads the time of its own gigs.
@@ -129,8 +131,13 @@ EVENTS_VERSION = "v2"
 EVENTS_CACHE_SECONDS = 7 * 86400
 
 # The venue files carry a version too, because the cleanup never removes
-# them. Raise it when a venue read or the geocode query changes.
+# them. Raise it when a venue read changes what a venue holds.
 VENUES_VERSION = "v1"
+
+# The miss files carry the version of the geocode query, because a query
+# change turns a cached miss into a wrong answer. The hits keep their
+# place, so only the misses move. Raise it with a change to the query.
+MISS_VERSION = "v2"
 
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.
@@ -297,7 +304,7 @@ class DataStores:
             data_dir,
             VENUES_SUBDIR,
             TypeAdapter(sources.Venue),
-            filename=lambda key: f"{prefix}miss_{key}.json",
+            filename=lambda key: f"{prefix}miss_{MISS_VERSION}_{key}.json",
             max_age=MISS_CACHE_SECONDS,
         )
 
@@ -318,8 +325,10 @@ class DataStores:
                     remove(path)
 
             for path in data/venues/<source>_*.json:
+            for path in data/venues/<source>_*.json:
                 if the second part is `miss`:
-                    remove when age(path) >= MISS_CACHE_SECONDS
+                    remove when the miss version is old,
+                    or when age(path) >= MISS_CACHE_SECONDS
                 elif the version part != VENUES_VERSION:
                     remove, because no code reads that shape
                 # the file of the current version stays
@@ -386,7 +395,10 @@ class DataStores:
                 # An unknown name stays, as the day rule does.
                 continue
             if parts[1] == MISS_PART:
-                if not old_enough(path, now, MISS_CACHE_SECONDS):
+                # A miss of an older query goes now, because the app cannot
+                # read its name again and the query changed under it.
+                current_miss = f"{MISS_PART}_{MISS_VERSION}_" in path.name
+                if current_miss and not old_enough(path, now, MISS_CACHE_SECONDS):
                     continue
             elif path.name.startswith(f"{parts[0]}_{VENUES_VERSION}_"):
                 # The current shape. The Nominatim policy needs it.

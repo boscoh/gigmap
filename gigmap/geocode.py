@@ -89,8 +89,6 @@ def address_query(address: str) -> str:
         return address
     return f"{address}, Australia"
 
-
-
 THE_RE = re.compile(r"^the\s+", re.IGNORECASE)
 BRACKET_RE = re.compile(r"\([^)]*\)")
 STATE_RE = re.compile(r"\b(VIC|Victoria)\b", re.IGNORECASE)
