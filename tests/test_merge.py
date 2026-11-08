@@ -104,7 +104,7 @@ def test_every_failed_member_lands_in_the_done_line() -> None:
     lines = asyncio.run(stream(members))
 
     assert artists(lines) == []
-    failed = [one for one in lines if "failed" in one and "done" not in one]
+    failed = [one for one in lines if "reason" in one and "done" not in one]
     assert sorted(one["source"] for one in failed) == ["a", "b"]
     done = lines[-1]
     assert done["done"] is True

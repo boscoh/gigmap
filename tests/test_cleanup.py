@@ -63,6 +63,17 @@ def test_the_dry_run_removes_nothing(data_dir: Path) -> None:
     assert report.days == 1
 
 
+def test_the_cleanup_removes_a_temporary_file(data_dir: Path) -> None:
+    temp = write(
+        data_dir / "days" / "gigmap_2026-10-01_2026-10-01.json.abc.tmp", OLD
+    )
+
+    stores.DataStores(server.data_dir).clean(time.time(), dry_run=True)
+    assert temp.exists()
+
+    stores.DataStores(server.data_dir).clean(time.time(), dry_run=False)
+    assert not temp.exists()
+
 def test_a_recent_file_is_skipped(data_dir: Path) -> None:
     fresh_day = write(data_dir / "days" / "gigmap_2020-01-01_2020-01-01.json", 0)
 

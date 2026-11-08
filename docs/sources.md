@@ -217,8 +217,9 @@ curl -sD- "http://127.0.0.1:8095/api/artscentre/events?start_date=2026-11-14&end
 curl -sD- "http://127.0.0.1:8095/api/artshub/events?start_date=2026-11-14&end_date=2026-11-14"
 ```
 
-Both requests answer 200 with an `x-gig-total` header, 5 and 25. Both pages
-answer 200 with the correct `<title>`. `beat` answers 18 gigs for the same
+Both requests answer 200 with `application/x-ndjson`, and the first line of
+each stream holds its candidate count, 5 and 25. Both pages answer 200 with
+the correct `<title>`. `beat` answers 18 gigs for the same
 day, so nothing broke.
 
 # Two notes

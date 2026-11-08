@@ -75,8 +75,8 @@ def test_every_member_failing_still_answers_200_with_done() -> None:
     assert lines[-1]["done"] is True
     failed = {one["source"]: one for one in lines[-1]["failed"]}
     assert set(failed) == {"a", "b"}
-    assert failed["a"]["code"] == "source_error"
-    assert failed["b"]["code"] == "internal"
+    assert failed["a"]["reason"] == "blocked"
+    assert failed["b"]["reason"] == "internal error"
     assert "secret" not in json.dumps(lines)
 
 
@@ -85,11 +85,11 @@ def test_one_failed_member_sends_its_line_then_done_after_the_other_gigs() -> No
         lines_of({"a": Member(fail=sources.SourceError("x")), "b": Member("b.test")})
     )
 
-    assert {"source": "a", "failed": "x", "code": "source_error"} in lines
+    assert {"source": "a", "reason": "x"} in lines
     assert artists(lines) == ["b.test"]
     assert lines[-1] == {
         "done": True,
-        "failed": [{"source": "a", "failed": "x", "code": "source_error"}],
+        "failed": [{"source": "a", "reason": "x"}],
     }
 
 
@@ -182,7 +182,7 @@ def test_a_member_failing_after_its_total_corrects_the_running_total() -> None:
     # The total said 2, no gig line went out, so the fix is -2.
     assert [line["total"] for line in lines if "total" in line] == [2, -2]
     assert artists(lines) == []
-    assert lines[-1]["failed"][0]["code"] == "internal"
+    assert lines[-1]["failed"][0]["reason"] == "internal error"
 
 
 def test_a_stalled_reader_leaves_at_most_64_lines_queued(

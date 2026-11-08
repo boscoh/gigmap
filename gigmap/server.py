@@ -335,12 +335,11 @@ def venue_failure_text(error: Exception) -> str:
 
 
 def event_line(
-    index: int,
     gig: sources.Gig,
     venue: sources.Venue | Exception | None,
 ) -> str:
     """Return the one stream line of a gig, with all of its data."""
-    line: dict[str, object] = {"index": index, "gig": gig.model_dump(), "venue": None}
+    line: dict[str, object] = {"gig": gig.model_dump(), "venue": None}
     if isinstance(venue, Exception):
         line["error"] = venue_failure_text(venue)
     elif venue is not None:
@@ -385,13 +384,11 @@ async def event_lines(
             await done.put(None)
 
     feeder = asyncio.create_task(feed())
-    count = 0
     try:
         while (item := await done.get()) is not None:
             if isinstance(item, Exception):
                 raise item
-            yield event_line(count, *item)
-            count += 1
+            yield event_line(*item)
     finally:
         # A client disconnect cancels every read.
         reads = [feeder, *tasks, *venues.values()]
@@ -496,9 +493,12 @@ async def merged_lines(
                 await queue.put(line)
         except Exception as error:
             log_kv(LOGGER.warning, "source failed", source=name, error=error)
-            code = "source_error" if isinstance(error, sources.SourceError) else "internal"
-            reason = str(error) if code == "source_error" else "internal error"
-            one = {"source": name, "failed": reason, "code": code}
+            reason = (
+                str(error)
+                if isinstance(error, sources.SourceError)
+                else "internal error"
+            )
+            one = {"source": name, "reason": reason}
             failed.append(one)
             await queue.put(json.dumps(one) + "\n")
             if running != sent:

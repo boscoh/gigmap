@@ -125,7 +125,7 @@ DAYS_VERSION = "v13"
 # The shape of a cached event parse. Raise this number with any change to
 # a parse that a source caches, because a cached value never sees a parser
 # fix. The cleanup removes each event file of an older number.
-EVENTS_VERSION = "v2"
+EVENTS_VERSION = "v3"
 
 # An event file stays fresh for this time. The cleanup uses the same number.
 EVENTS_CACHE_SECONDS = 7 * 86400
@@ -186,6 +186,11 @@ def remove_file(path: Path, dry_run: bool) -> int:
     except OSError:
         return 0
     return size
+
+
+def remove_temps(directory: Path, dry_run: bool) -> int:
+    """Remove the temporary files of a save that did not finish."""
+    return sum(remove_file(path, dry_run) for path in directory.glob("*.tmp"))
 
 
 def remove_tree(path: Path, dry_run: bool) -> int:
@@ -333,6 +338,8 @@ class DataStores:
                     remove, because no code reads that shape
                 # the file of the current version stays
 
+            for path in each cache directory with a `.tmp` name:
+                remove, because a save that the process killed left it
             for name in STALE_SUBDIRS:
                 remove the whole tree, because no code reads it
 
@@ -356,6 +363,14 @@ class DataStores:
         size = 0
         stale = 0
         skipped = 0
+        # A save that the process killed left its temporary file behind. No
+        # reader opens that name, so the sweep takes it at the next cleanup.
+        for cache_dir in (
+            self.days.directory(),
+            self._root() / EVENTS_SUBDIR,
+            self._root() / VENUES_SUBDIR,
+        ):
+            size += remove_temps(cache_dir, dry_run)
 
         for name in STALE_SUBDIRS:
             path = self._root() / name

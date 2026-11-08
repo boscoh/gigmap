@@ -357,7 +357,7 @@ def test_the_event_stream_answers_one_line_for_each_gig(
 
     assert response.status_code == 200
     lines = _lines(response)
-    assert sorted(line["index"] for line in lines) == [0, 1]
+    assert len(lines) == 2
     assert {line["gig"]["time"] for line in lines} == {"8:30pm"}
     assert {line["venue"]["venue_url"] for line in lines} == {
         VENUE_URL,
@@ -419,7 +419,7 @@ def test_the_event_stream_answers_a_failed_venue_line(
 
     line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
 
-    assert set(line) == {"index", "gig", "venue", "error"}
+    assert set(line) == {"gig", "venue", "error"}
     assert line["gig"]["artist"] == "Act"
     assert line["gig"]["time"] == "8:30pm"
     assert line["venue"] is None
@@ -438,7 +438,6 @@ def test_the_event_line_holds_the_whole_venue(
 
     line = _lines(http.get("/api/beat/events", params=PARAMS))[0]
 
-    assert line["index"] == 0
     assert line["gig"]["artist"] == "Act"
     assert line["venue"] == {
         "venue_url": VENUE_URL,
@@ -502,7 +501,7 @@ def test_a_blocked_venue_holds_no_other_line(
 
     lines = asyncio.run(run())
 
-    assert [line["index"] for line in lines] == [0, 1]
+    assert len(lines) == 2
     assert lines[0]["gig"]["venue_url"] == SECOND_VENUE_URL
     assert lines[0]["venue"]["venue_url"] == SECOND_VENUE_URL
 
@@ -539,8 +538,7 @@ def test_a_source_error_answers_200_and_done(
         "failed": [
             {
                 "source": "beat",
-                "failed": "cannot reach beat.com.au",
-                "code": "source_error",
+                "reason": "cannot reach beat.com.au",
             }
         ],
     }
@@ -920,12 +918,16 @@ def test_a_second_expand_makes_no_beat_read() -> None:
     assert len(calls) == 1
 
 
-def test_a_beat_page_with_no_time_caches_an_empty_string() -> None:
+def test_parse_gig_detail_gives_the_facts() -> None:
+    assert beat.parse_gig_detail(DETAIL_HTML) == beat.GigFacts(time="8:30pm")
+
+
+def test_a_beat_page_with_no_time_caches_empty_facts() -> None:
     calls: list[str] = []
     assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
     assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
     assert len(calls) == 1
-    assert beat.EVENTS.load("act") == ""
+    assert beat.EVENTS.load("act") == beat.GigFacts()
 
 
 def test_a_beat_source_error_saves_no_event_file() -> None:

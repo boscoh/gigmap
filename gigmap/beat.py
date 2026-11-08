@@ -4,6 +4,76 @@ This module holds every rule about the site: the URLs, the browser client,
 page markup selectors, the date and time formats, and the reads. It is the
 only module that reads beat.com.au. The server holds the cache and the HTTP
 routes.
+
+The site
+
+The site is behind Cloudflare, and Cloudflare reads the TLS fingerprint of
+the client. `curl_cffi` impersonates a browser, so this module sends no user
+agent. A challenge belongs to one fingerprint, so `_html` tries the targets
+of `IMPERSONATE_TARGETS` in turn and keeps the one that passed, for the
+later reads of the process. A 5xx is a gateway or origin fault, so the same
+target is retried `SERVER_ERROR_ATTEMPTS` times.
+
+The reads
+
+The module makes three reads.
+
+* `candidates` reads the gig guide page of the range. `_page` sends
+  `start_date` and `end_date` as `YYYY-MM-DD` and leaves the other filters
+  empty.
+* `expand` reads the detail page of one gig, for its start time.
+* `venue` reads the directory page of one venue, for its name and its
+  street address.
+
+The card
+
+A card of the gig guide holds almost every fact that this app needs: the
+title and its detail url, the date and end date, the venue name and url,
+the categories, the genres, the ticket, and the image. It holds no start
+time, so every card gives a candidate only.
+
+The time
+
+The start time sits on the detail page, in the `article-meta-item` whose
+headline reads `Time`. `expand` reads that page once for each detail url.
+It skips the read when the gig already holds a time, and when the url is
+not a detail path, because a directory url is a venue.
+`parse_gig_detail` returns the `GigFacts` of the page, and `EVENTS`
+keeps that value on disk, so a second range with the same gig reads no
+page. A page with no time is cached too, because a miss is a fact.
+
+`GigFacts` holds an `address` field for a later parse. No saved markup
+of a detail page proves the selector of an address, so the parse fills
+`time` only, and the field stays None.
+
+A failed read keeps the gig with an empty time and saves no file, because
+a fault is not a fact.
+
+The venue
+
+A venue url has the form `https://beat.com.au/directory/<name>/`, and
+`venue` rejects any other form. `parse_venue` takes the heading as the
+name and the first `article-meta-item` of the content as the street
+address. The server geocodes that address, and the venue cache holds the
+answer, so the module reads a venue page once.
+
+The pool
+
+Every detail and venue read of the process runs under `DETAIL_POOL`, at 5
+reads at a time.
+
+The cache
+
+`EVENTS` is the event cache of `stores`, keyed by `sources.url_key`. A
+file is `data/events/beat_<EVENTS_VERSION>_<key>.json`. The day file and
+the venue file belong to the server, not to this module. A change to the
+shape of `GigFacts` needs a raise of `EVENTS_VERSION`, or a reader
+serves an old value.
+
+The tests
+
+`uv run pytest tests/test_source.py` runs the tests. The tests use saved
+HTML, so they do not touch the live site.
 """
 
 import asyncio
@@ -15,7 +85,7 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl_requests
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from gigmap import sources, stores
 from gigmap.logger import log_request
@@ -75,8 +145,16 @@ DETAIL_CONCURRENCY = 5
 # One pool for the whole app, so every request shares the limit.
 DETAIL_POOL = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
-# The time of each detail page, keyed by url. "" means the page has no time.
-EVENTS = stores.event_cache("beat", TypeAdapter(str))
+
+class GigFacts(BaseModel):
+    """The range-free facts of one gig detail page."""
+
+    time: str | None = None
+    address: str | None = None
+
+
+# The facts of each detail page, keyed by url. A page with no time is cached too.
+EVENTS = stores.event_cache("beat", TypeAdapter(GigFacts))
 
 LOGGER = logging.getLogger(__name__)
 
@@ -112,7 +190,7 @@ def attribute(node: object, name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def parse_gig_detail(html: str) -> str | None:
+def parse_gig_detail(html: str) -> GigFacts:
     soup = BeautifulSoup(html, "lxml")
     time_text = None
     for item in soup.select(".article-meta-item"):
@@ -123,7 +201,7 @@ def parse_gig_detail(html: str) -> str | None:
         if content is not None:
             time_text = content.get_text(" ", strip=True)
         break
-    return normalise_time(time_text)
+    return GigFacts(time=normalise_time(time_text))
 
 
 FREE_PRICE = "Free"
@@ -340,17 +418,17 @@ class BeatSource:
         if gig.time or DETAIL_URL_RE.fullmatch(url) is None:
             return [gig]
         key = sources.url_key(url)
-        time_text = EVENTS.load(key)
-        if time_text is None:
+        facts = EVENTS.load(key)
+        if facts is None:
             try:
                 async with DETAIL_POOL:
                     html = await self._html(url)
             except sources.SourceError as error:
                 LOGGER.warning("skip the detail page %s: %s", url, error)
                 return [gig]
-            time_text = parse_gig_detail(html) or ""
-            EVENTS.save(key, time_text)
-        return [gig.model_copy(update={"time": time_text or None})]
+            facts = parse_gig_detail(html)
+            EVENTS.save(key, facts)
+        return [gig.model_copy(update={"time": facts.time})]
 
     async def venue(self, venue_url: str) -> sources.Venue:
         """Return the address data of one venue."""
