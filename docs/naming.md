@@ -42,8 +42,17 @@ that only parses the text it was handed starts with `parse_`.
 ## The disk
 
 Every cache file is `<source>_<vN>_<key>.json`, with a lowercase source and a
-lowercase version. The key keeps the case and the encoding of the source: a
-site slug, a vendor id, or a quoted title and address.
+lowercase version.
+
+Every key of the event and venue caches comes from `sources.slug`, which
+lowercases the text, turns each run of another character into `-`, cuts the
+words at 60 characters, and adds 8 characters of a hash of the whole text. A
+name is therefore safe on a case-blind disk and short enough for a file name,
+and two texts that give the same words still get different keys.
+`sources.url_key` applies that rule to the last part of a url. A day file
+keeps its `<start>_<end>` key, because a date needs no slug. A change to
+`slug` changes every event and venue key, so it raises `EVENTS_VERSION`,
+`VENUES_VERSION` and `MISS_VERSION`.
 
 | Directory | Holds | Written by |
 | --- | --- | --- |

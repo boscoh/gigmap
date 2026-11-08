@@ -122,22 +122,25 @@ STALE_SUBDIRS = ("gigs",)
 # removes it on the usual rules.
 DAYS_VERSION = "v13"
 
-# The shape of a cached event parse. Raise this number with any change to
-# a parse that a source caches, because a cached value never sees a parser
-# fix. The cleanup removes each event file of an older number.
-EVENTS_VERSION = "v3"
+# The shape of a cached event parse, and the rule that names its file.
+# Raise this number with any change to a parse that a source caches,
+# because a cached value never sees a parser fix, and with any change to
+# `sources.slug`. The cleanup removes each event file of an older number.
+EVENTS_VERSION = "v4"
 
 # An event file stays fresh for this time. The cleanup uses the same number.
 EVENTS_CACHE_SECONDS = 7 * 86400
 
 # The venue files carry a version too, because the cleanup never removes
-# them. Raise it when a venue read changes what a venue holds.
-VENUES_VERSION = "v1"
+# them. Raise it when a venue read changes what a venue holds, or when
+# the key rule changes.
+VENUES_VERSION = "v2"
 
 # The miss files carry the version of the geocode query, because a query
 # change turns a cached miss into a wrong answer. The hits keep their
-# place, so only the misses move. Raise it with a change to the query.
-MISS_VERSION = "v4"
+# place, so only the misses move. Raise it with a change to the query, or
+# to the key rule.
+MISS_VERSION = "v5"
 
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.

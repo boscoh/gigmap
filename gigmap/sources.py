@@ -8,9 +8,11 @@ The data classes below are the return types of the protocol. `sources.py`
 declares them, so the server and every source agree on one shape.
 """
 
+import hashlib
+import re
 from enum import Enum
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -205,7 +207,24 @@ class SourcePool(Protocol):
         ...
 
 
+# Every cache names its file after this rule, so a name is safe on a
+# case-blind disk, and short enough for a file name.
+SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+
+def slug(text: str, limit: int = 60) -> str:
+    """Return a safe, short name for one text, for use in a file name.
+
+    The words stay, so a reader sees what a file holds. A hash of the text
+    keeps apart two texts that give the same words, for example
+    `Corner A &, B St` and `Corner A, B St`.
+    """
+    words = SLUG_SEPARATORS.sub("-", unquote(text).lower()).strip("-")
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    return f"{words[:limit].strip('-') or 'page'}-{digest}"
+
+
 def url_key(url: str) -> str:
-    """A short cache name for a page url."""
-    name = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
-    return name or "page"
+    """A short, safe cache name for one page url."""
+    path = urlparse(url).path.rstrip("/")
+    return slug(path.rsplit("/", 1)[-1])

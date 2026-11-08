@@ -92,9 +92,26 @@ def client(
 
 
 def test_url_key_uses_the_last_path_segment() -> None:
-    assert sources.url_key("https://beat.com.au/directory/venue/") == "venue"
-    assert sources.url_key("https://beat.com.au/act") == "act"
-    assert sources.url_key("https://beat.com.au/") == "page"
+    assert sources.url_key("https://beat.com.au/directory/venue/").startswith("venue-")
+    assert sources.url_key("https://beat.com.au/act").startswith("act-")
+    assert sources.url_key("https://beat.com.au/").startswith("page-")
+
+
+def test_url_key_keeps_two_addresses_apart() -> None:
+    """The words alone collide, so the key carries a hash of the text."""
+    one = sources.url_key("https://x.test/venue/Corner%20A%20%26%2C%20B%20St/")
+    two = sources.url_key("https://x.test/venue/Corner%20A%2C%20B%20St/")
+
+    assert one.startswith("corner-a-b-st-")
+    assert two.startswith("corner-a-b-st-")
+    assert one != two
+
+
+def test_url_key_is_short_and_safe_for_a_file_name() -> None:
+    key = sources.url_key("https://x.test/venue/" + "St%20" * 80 + "/")
+
+    assert len(key) <= 69
+    assert set(key) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 def test_a_run_of_one_day_holds_no_end_date() -> None:
@@ -927,7 +944,8 @@ def test_a_beat_page_with_no_time_caches_empty_facts() -> None:
     assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
     assert [g.time for g in beat_expand("<html></html>", calls)] == [None]
     assert len(calls) == 1
-    assert beat.EVENTS.load("act") == beat.GigFacts()
+    key = sources.url_key("https://beat.com.au/act/")
+    assert beat.EVENTS.load(key) == beat.GigFacts()
 
 
 def test_a_beat_source_error_saves_no_event_file() -> None:

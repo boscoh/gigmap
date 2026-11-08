@@ -216,7 +216,7 @@ def test_the_venue_address_round_trips() -> None:
 def test_the_cache_names_a_venue_after_its_name() -> None:
     url = artscentre.venue_url("Hamer Hall")
     assert url is not None
-    assert sources.url_key(url) == "Hamer%20Hall"
+    assert sources.url_key(url).startswith("hamer-hall-")
 
 
 def test_no_venue_holds_no_address() -> None:
