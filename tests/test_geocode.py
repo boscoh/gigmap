@@ -42,8 +42,8 @@ def test_the_locality_drops_the_state_and_the_postcode() -> None:
 
 
 
-def test_the_name_query_runs_before_the_address(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The street answer of ACMI is the railway station, not the museum."""
+def test_the_address_query_runs_before_the_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The street names one building. A name finds a namesake elsewhere."""
     order: list[str] = []
 
     async def geocode_query(query: str) -> None:
@@ -54,9 +54,26 @@ def test_the_name_query_runs_before_the_address(monkeypatch: pytest.MonkeyPatch)
 
     asyncio.run(geocode.geocode_venue("ACMI", "Flinders St, Melbourne 3000"))
 
-    assert order[0] == "ACMI, Melbourne, Australia"
-    assert order[1] == "Flinders St, Melbourne 3000, Australia"
+    assert order[0] == "Flinders St, Melbourne 3000, Australia"
+    assert order[1] == "ACMI, Melbourne, Australia"
     assert order[2] == "Melbourne, Victoria, Australia"
+
+
+def test_a_street_without_a_comma_skips_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Curtin` alone is Curtin Avenue in Lalor, not the hotel."""
+    order: list[str] = []
+
+    async def geocode_query(query: str) -> dict:
+        order.append(query)
+        return {"latitude": -37.8, "longitude": 145.0, "display_name": "a street"}
+
+    monkeypatch.setattr(geocode, "geocode", geocode_query)
+
+    asyncio.run(geocode.geocode_venue("The Curtin", "29 Lygon St Carlton VIC 3053"))
+
+    assert order == ["29 Lygon St Carlton VIC 3053, Australia"]
 
 
 def test_the_locality_skips_a_trailing_country() -> None:
@@ -84,8 +101,13 @@ def test_a_name_answer_outside_the_suburb_is_rejected(
     }
 
     async def geocode_query(query: str) -> dict | None:
-        # The bare name finds Canberra, and the address finds Newport.
-        return canberra if query.startswith("Substation") else newport
+        # The street finds nothing, the name finds Canberra, and the suburb
+        # of the address finds Newport.
+        if query.startswith("Substation"):
+            return canberra
+        if query.startswith("Newport"):
+            return newport
+        return None
 
     monkeypatch.setattr(geocode, "geocode", geocode_query)
 

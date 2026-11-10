@@ -130,20 +130,21 @@ def name_query(name: str, address: str | None) -> str:
 
 
 async def geocode_venue(name: str | None, address: str | None) -> dict | None:
-    """Try the venue name, then the address, and return the first place.
+    """Try the address, then the name, and return the first place.
 
-    The name names the place itself, so it wins: `ACMI` is the museum,
-    while its street answer is the railway station. A name that finds
-    no place falls back to the address, which pins the street. A name
-    answer counts only when it names the suburb: a bare name finds any
-    place of that name in the country.
+    The address names one building, and a name can match a namesake across
+    the city: `Playhouse` finds a hall in Kew, and `Atrium` a hall in
+    Hawthorn, while the street finds the venue. So the name answers only
+    when the address finds nothing, and only when its answer names the
+    suburb, because a bare name matches any place of that name in the
+    country. A venue with no street relies on its name alone.
     """
     suburb = locality(address)
     queries = []
-    if name:
-        queries.append((name_query(name, address), suburb))
     if address:
         queries.append((address_query(address), None))
+    if name and (suburb or not address):
+        queries.append((name_query(name, address), suburb))
     if suburb:
         # ponytail: the suburb centre, not the venue. Better than no marker.
         queries.append((f"{suburb}, Victoria, Australia", None))
