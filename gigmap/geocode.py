@@ -77,7 +77,11 @@ async def geocode(query: str) -> dict | None:
         longitude = float(first["lon"])
     except (KeyError, TypeError, ValueError):
         return None
-    return {"latitude": latitude, "longitude": longitude}
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "display_name": first.get("display_name", ""),
+    }
 
 
 def address_query(address: str) -> str:
@@ -102,11 +106,14 @@ def locality(address: str | None) -> str | None:
     postcode. The name query needs it: `Curtin, Carlton` finds the venue,
     and `Curtin, Melbourne` finds a street 10 km away.
     """
-    if "," not in (address or ""):
+    parts = [part for part in (address or "").split(",") if part.strip()]
+    # Art Hub ends the address with `, Australia` as its own part. That part
+    # is the country, never the suburb.
+    parts = [part for part in parts if part.strip().lower() != "australia"]
+    if len(parts) < 2:
         # A street with no comma holds no separate suburb.
         return None
-    part = (address or "").split(",")[-1]
-    suburb = POSTCODE_RE.sub("", STATE_RE.sub("", part))
+    suburb = POSTCODE_RE.sub("", STATE_RE.sub("", parts[-1]))
     return suburb.strip(" ,") or None
 
 
@@ -127,20 +134,28 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
 
     The name names the place itself, so it wins: `ACMI` is the museum,
     while its street answer is the railway station. A name that finds
-    no place falls back to the address, which pins the street."""
+    no place falls back to the address, which pins the street. A name
+    answer counts only when it names the suburb: a bare name finds any
+    place of that name in the country.
+    """
+    suburb = locality(address)
     queries = []
     if name:
-        queries.append(name_query(name, address))
+        queries.append((name_query(name, address), suburb))
     if address:
-        queries.append(address_query(address))
-    suburb = locality(address)
+        queries.append((address_query(address), None))
     if suburb:
         # ponytail: the suburb centre, not the venue. Better than no marker.
-        queries.append(f"{suburb}, Victoria, Australia")
-    for query in queries:
+        queries.append((f"{suburb}, Victoria, Australia", None))
+    for query, wanted in queries:
         place = await geocode(query)
-        if place is not None:
-            return place
+        if place is None:
+            continue
+        if wanted and wanted.lower() not in place.get("display_name", "").lower():
+            # `Substation, Australia` is a zone substation in Canberra.
+            LOGGER.info("geocode mismatch: %r is not in %r", wanted, query)
+            continue
+        return place
     return None
 
 
