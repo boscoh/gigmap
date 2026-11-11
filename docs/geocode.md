@@ -36,17 +36,53 @@ Lalor, and the venue is the hotel in Carlton.
 
 ## The wrong pins
 
-| Venue          | Address from the source                   | Wrong pin                         | Cause                                                                                                  |
-| -------------- | ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| The Substation | `1 Market Street, Newport VIC, Australia` | zone substation, Canberra ACT     | the trailing `, Australia` became the suburb, so the name query was `Substation, Australia, Australia` |
-| (same cause)   | any address that ends in `, Australia`    | Belmont, Geelong                  | the suburb fallback hardcoded `Victoria`, so it built `Australia, Victoria, Australia`                 |
-| Playhouse      | `100 St Kilda Rd, Melbourne VIC 3004`     | Playhouse, Kew                    | the name query ran first, and `Melbourne` appears in the display name of every suburb                  |
-| The Atrium     | `Flinders St, Melbourne 3000`             | Atrium, Hawthorn                  | the same: a name with a city, and no street number to pin it                                           |
-| The Curtin     | `29 Lygon St Carlton VIC 3053`            | Curtin Avenue, Lalor              | no comma, so no suburb, so the name query was `Curtin, Melbourne, Australia`                           |
-| The Open Space | `11 Acacia Pl Abbotsford VIC 3067`        | Open Space Construction, Box Hill | no comma, so no suburb, so the name query was `Open Space, Melbourne, Australia`                       |
+| Venue                   | Address from the source                       | Wrong pin                              | Cause                                                                                                  |
+| ----------------------- | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| The Substation          | `1 Market Street, Newport VIC, Australia`     | zone substation, Canberra ACT          | the trailing `, Australia` became the suburb, so the name query was `Substation, Australia, Australia` |
+| (same cause)            | any address that ends in `, Australia`        | Belmont, Geelong                       | the suburb fallback hardcoded `Victoria`, so it built `Australia, Victoria, Australia`                 |
+| Playhouse               | `100 St Kilda Rd, Melbourne VIC 3004`         | Playhouse, Kew                         | the name query ran first, and `Melbourne` appears in the display name of every suburb                  |
+| The Atrium              | `Flinders St, Melbourne 3000`                 | Atrium, Hawthorn                       | the same: a name with a city, and no street number to pin it                                           |
+| The Curtin              | `29 Lygon St Carlton VIC 3053`                | Curtin Avenue, Lalor                   | no comma, so no suburb, so the name query was `Curtin, Melbourne, Australia`                           |
+| The Open Space          | `11 Acacia Pl Abbotsford VIC 3067`            | Open Space Construction, Box Hill      | no comma, so no suburb, so the name query was `Open Space, Melbourne, Australia`                       |
+| City Gallery, Town Hall | `110 Swanston St, Melbourne 3000`             | 110 Swanston Street, Templestowe Lower | Nominatim holds no `110 Swanston Street` in postcode 3000. The one match is a street 15 km away        |
+| Shrine of Remembrance   | `Birdwood Ave, Melbourne 3001`                | Birdwood Avenue, Macleod               | the address query took the first of two answers. The second is the Shrine, in postcode 3004            |
+| SOFI'S LOUNGE           | `25 Collins St, Melbourne 3000`               | 25 Collins Street, Thornbury           | Nominatim holds no `25 Collins Street` in postcode 3000. All 11 matches sit in other suburbs           |
+| CAVES                   | `Rm 5 Level 8/37 Swanston St, Melbourne 3000` | Caves Way, Donnybrook                  | the room prefix defeats the address query, and the name `CAVES` then matched a street called Caves Way |
 
-The last four share one cause: the name answered before the address. The
-address found the venue in every case, and it ran second.
+The Playhouse, Atrium, Curtin and Open Space rows share one cause: the name
+answered before the address. The address found the venue in every case, and
+it ran second.
+
+The last four rows share a different cause. See below.
+
+## The limit of the data
+
+No query form fixes the last four. Nominatim holds no place for three of
+these addresses. A free-text search of 50 results gives the table below. A
+structured search (`street`, `city`, `postalcode`) gives the same places,
+so the query form is not the cause.
+
+| Address                          | Results, 50 deep | Results in the stated postcode |
+| -------------------------------- | ---------------- | ------------------------------ |
+| `110 Swanston Street, Melbourne` | 1                | 0                              |
+| `25 Collins Street, Melbourne`   | 11               | 0                              |
+| `Birdwood Avenue, Melbourne`     | 9                | 0                              |
+
+Measured on 2026-11-10.
+
+The city part of the query does not constrain the answer. Every street name
+in greater Melbourne matches `Melbourne`, so a query for `25 Collins Street,
+Melbourne 3000` returns the Collins Streets of Thornbury, Preston, Essendon
+and others, and none of them is in 3000.
+
+Two consequences:
+
+- A rule on the answer is the only defence. An address answer must carry
+  the postcode that the address states. When no answer carries it, the
+  address has no place, and the name or the suburb centre must answer.
+- The `CAVES` row has a second fault that a query can fix. The room prefix
+  `Rm 5 Level 8/` defeats the search. `37 Swanston St, Melbourne 3000`
+  finds Cathedral Arcade at that address, in postcode 3000.
 
 ## The cache
 
