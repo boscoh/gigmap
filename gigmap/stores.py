@@ -135,12 +135,12 @@ EVENTS_CACHE_SECONDS = 7 * 86400
 # them. Raise it when a venue read changes what a venue holds, when the key
 # rule changes, or when the geocode query changes, because an old hit then
 # holds a wrong place.
-VENUES_VERSION = "v4"
+VENUES_VERSION = "v5"
 
 # The miss files carry the version of the geocode query, because a query
 # change turns a cached miss into a wrong answer. Raise it with a change to
 # the query, or to the key rule.
-MISS_VERSION = "v7"
+MISS_VERSION = "v8"
 
 # A venue with no place is tried again after this wait. Nominatim answers
 # nothing for some venues, and a query on each request is not polite.

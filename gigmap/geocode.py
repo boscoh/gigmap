@@ -27,8 +27,12 @@ _geocode_lock = asyncio.Lock()
 _last_geocode = 0.0
 
 
-async def geocode(query: str) -> dict | None:
-    """Ask Nominatim for one query. None when the lookup fails."""
+async def geocode(query: str, *, postcode: str | None = None) -> dict | None:
+    """Ask Nominatim for one query. None when the lookup fails.
+
+    Nominatim can rank a street of the same name in another suburb first.
+    So with a postcode, only a result that holds the postcode is kept.
+    """
     global _last_geocode
 
     async with _geocode_lock:
@@ -44,7 +48,7 @@ async def geocode(query: str) -> dict | None:
                     params={
                         "q": query,
                         "format": "jsonv2",
-                        "limit": 1,
+                        "limit": 5,
                         "countrycodes": "au",
                     },
                     headers=NOMINATIM_HEADERS,
@@ -69,6 +73,8 @@ async def geocode(query: str) -> dict | None:
         results = response.json()
     except ValueError:
         return None
+    if postcode is not None:
+        results = [r for r in results if postcode in r.get("display_name", "")]
     if not results:
         return None
     first = results[0]
@@ -88,7 +94,11 @@ def address_query(address: str) -> str:
     """Add the country to an address, unless the address names it already.
 
     Nominatim finds nothing for `..., Australia, Australia`.
+    A room or level prefix, as in `Rm 5 Level 8/37 Swanston St`, hides the
+    street number. So only the text after the last `/` stays.
     """
+    street, comma, rest = address.partition(",")
+    address = street.rsplit("/", 1)[-1].strip() + comma + rest
     if "australia" in address.lower():
         return address
     return f"{address}, Australia"
@@ -140,16 +150,18 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
     country. A venue with no street relies on its name alone.
     """
     suburb = locality(address)
+    found = POSTCODE_RE.search(address or "")
     queries = []
     if address:
-        queries.append((address_query(address), None))
+        # Only the street answer must carry the postcode of the address.
+        queries.append((address_query(address), None, found and found.group()))
     if name and (suburb or not address):
-        queries.append((name_query(name, address), suburb))
+        queries.append((name_query(name, address), suburb, None))
     if suburb:
         # ponytail: the suburb centre, not the venue. Better than no marker.
-        queries.append((f"{suburb}, Victoria, Australia", None))
-    for query, wanted in queries:
-        place = await geocode(query)
+        queries.append((f"{suburb}, Victoria, Australia", None, None))
+    for query, wanted, postcode in queries:
+        place = await geocode(query, postcode=postcode)
         if place is None:
             continue
         if wanted and wanted.lower() not in place.get("display_name", "").lower():

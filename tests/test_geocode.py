@@ -46,7 +46,7 @@ def test_the_address_query_runs_before_the_name(monkeypatch: pytest.MonkeyPatch)
     """The street names one building. A name finds a namesake elsewhere."""
     order: list[str] = []
 
-    async def geocode_query(query: str) -> None:
+    async def geocode_query(query: str, *, postcode: str | None = None) -> None:
         order.append(query)
         return None
 
@@ -65,7 +65,7 @@ def test_a_street_without_a_comma_skips_the_name(
     """`Curtin` alone is Curtin Avenue in Lalor, not the hotel."""
     order: list[str] = []
 
-    async def geocode_query(query: str) -> dict:
+    async def geocode_query(query: str, *, postcode: str | None = None) -> dict:
         order.append(query)
         return {"latitude": -37.8, "longitude": 145.0, "display_name": "a street"}
 
@@ -100,7 +100,9 @@ def test_a_name_answer_outside_the_suburb_is_rejected(
         "display_name": "The Substation, 1 Market Street, Newport, 3015",
     }
 
-    async def geocode_query(query: str) -> dict | None:
+    async def geocode_query(
+        query: str, *, postcode: str | None = None
+    ) -> dict | None:
         # The street finds nothing, the name finds Canberra, and the suburb
         # of the address finds Newport.
         if query.startswith("Substation"):
@@ -116,3 +118,37 @@ def test_a_name_answer_outside_the_suburb_is_rejected(
     )
 
     assert place == newport
+
+
+def test_an_address_answer_in_the_wrong_postcode_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A street of the same name in another suburb must not win."""
+    wrong = {"latitude": -37.0, "longitude": 145.0, "display_name": "Rd, Foo, 3999"}
+    right = {"latitude": -37.8, "longitude": 144.9, "display_name": "Venue, Kew, 3101"}
+
+    async def geocode_query(
+        query: str, *, postcode: str | None = None
+    ) -> dict | None:
+        place = right if query.startswith("Venue") else wrong
+        if postcode is not None and postcode not in place["display_name"]:
+            return None
+        return place
+
+    monkeypatch.setattr(geocode, "geocode", geocode_query)
+
+    place = asyncio.run(geocode.geocode_venue("Venue", "1 High St, Kew 3101"))
+
+    assert place == right
+
+
+def test_a_room_prefix_becomes_a_plain_street() -> None:
+    assert geocode.address_query("Rm 5 Level 8/37 Swanston St, Melbourne 3000") == (
+        "37 Swanston St, Melbourne 3000, Australia"
+    )
+
+
+def test_the_unit_form_keeps_the_street_number() -> None:
+    assert geocode.address_query("1/25 Smith St, Kew 3101") == (
+        "25 Smith St, Kew 3101, Australia"
+    )
