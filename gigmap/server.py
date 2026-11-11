@@ -7,7 +7,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -155,13 +155,90 @@ async def cleanup_loop() -> None:
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
+# A new venue version re-geocodes every venue on its first read, and a
+# reader waits for it. So after such a change the server reads the next
+# two weeks of each source at startup, and the pins are ready.
+WARM_DAYS = 14
+
+
+def venue_cache_stale() -> bool:
+    """True when the venue cache holds no file of the current versions.
+
+    An empty directory is not stale: a fresh instance has nothing to
+    refresh. Only a version change makes the old files unusable.
+    """
+    root = data_dir() / stores.VENUES_SUBDIR
+    names = [path.name for path in root.glob("*.json")]
+    marks = (f"_{stores.VENUES_VERSION}_", f"_{stores.MISS_VERSION}_")
+    return bool(names) and not any(mark in name for name in names for mark in marks)
+
+
+def warm_ranges() -> list[tuple[str, str]]:
+    """Return the date ranges of the next WARM_DAYS days, of API size."""
+    today = date.today()
+    last = today + timedelta(days=WARM_DAYS - 1)
+    ranges = []
+    start = today
+    while start <= last:
+        end = min(start + timedelta(days=MAX_RANGE_DAYS - 1), last)
+        ranges.append((start.isoformat(), end.isoformat()))
+        start = end + timedelta(days=1)
+    return ranges
+
+
+async def warm_source(name: str, start: str, end: str) -> int:
+    """Read one source over one range, and return the gig count."""
+    async with SOURCE_FACTORIES[name]() as site:
+        member = stores.CachedSource(site, stores.DataStores(data_dir, name))
+        lists = {name: asyncio.create_task(read_list(name, member, start, end))}
+        count = 0
+        # The stream line carries the venue, so the read fills the cache.
+        async for _ in merged_lines({name: member}, lists, start, end):
+            count += 1
+        return count
+
+
+async def warm_loop(stale: bool) -> None:
+    """Fill the venue cache after a version change, then stop."""
+    if not stale:
+        return
+    log_kv(LOGGER.info, "warming the venue cache", days=WARM_DAYS)
+    for name in SOURCE_FACTORIES:
+        for start, end in warm_ranges():
+            try:
+                count = await warm_source(name, start, end)
+            except Exception as error:
+                log_kv(
+                    LOGGER.warning,
+                    "warm failed",
+                    source=name,
+                    start=start,
+                    error=error,
+                )
+                continue
+            log_kv(
+                LOGGER.info,
+                "warmed",
+                source=name,
+                start=start,
+                end=end,
+                gigs=count,
+            )
+    log_kv(LOGGER.info, "venue cache is warm")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_logging()
+    # Read the flag first: the cleanup deletes the old venue files, and
+    # their absence is the sign of a version change.
+    stale = venue_cache_stale()
     task = asyncio.create_task(cleanup_loop())
+    warm = asyncio.create_task(warm_loop(stale))
     try:
         yield
     finally:
+        warm.cancel()
         task.cancel()
 
 

@@ -144,6 +144,23 @@ that has no opening hours, and the table shows `time` then.
 Only the geocoder can change the pace of the last row. A cold artshub page
 shows rows at the pace of its event pages.
 
+## The warm load
+
+A new `VENUES_VERSION` makes every venue geocode again, and the first
+reader of each page pays for it. So the server reads the next 14 days of
+each source at startup, when the venue cache holds only files of an older
+version. That load fills the venue, event and day caches.
+
+| Item      | Value                                                           |
+| --------- | --------------------------------------------------------------- |
+| The sign  | the venue files exist, and none of them has the current version |
+| The range | the next `WARM_DAYS` (14) days, in ranges of 7 days             |
+| The order | one source at a time, and one range at a time                   |
+| A failure | logged, and the warm moves to the next source                   |
+
+An empty data directory does not warm, because a fresh instance has
+nothing to refresh.
+
 ## The failures
 
 | The failure                    | The result                                                                         |
