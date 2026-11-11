@@ -77,12 +77,39 @@ and others, and none of them is in 3000.
 
 Two consequences:
 
-- A rule on the answer is the only defence. An address answer must carry
-  the postcode that the address states. When no answer carries it, the
-  address has no place, and the name or the suburb centre must answer.
+- A rule on the answer is the only defence. An address answer must hold a
+  postcode near the one that the address states. When no answer holds it,
+  the address has no place, and the name or the suburb centre must answer.
 - The `CAVES` row has a second fault that a query can fix. The room prefix
   `Rm 5 Level 8/` defeats the search. `37 Swanston St, Melbourne 3000`
   finds Cathedral Arcade at that address, in postcode 3000.
+
+## The answer guard
+
+`geocode` asks for 5 results and keeps the first one that passes its rule.
+
+| Query         | Rule                                                                     |
+| ------------- | ------------------------------------------------------------------------ |
+| the street    | the postcode of the answer is within `POSTCODE_RANGE` (5) of the address |
+| the name      | its `display_name` holds the suburb of the address                       |
+| suburb centre | none, because it is the last fallback                                    |
+
+`address_query` keeps only the text after the last `/` in the street part,
+so a room or level prefix cannot hide the street number.
+
+The nine reported addresses answer as below. Measured on 2026-11-11.
+
+| Venue                   | Pin                                               |
+| ----------------------- | ------------------------------------------------- |
+| The Substation          | The Substation, 1 Market Street, Newport          |
+| Playhouse               | Hamer Hall, 100 St Kilda Road, Southbank          |
+| The Atrium              | Flinders Street, Melbourne                        |
+| The Curtin              | John Curtin Hotel, 29 Lygon Street, Carlton       |
+| The Open Space          | 11 Acacia Place, Abbotsford                       |
+| City Gallery, Town Hall | the suburb centre, about 300 m from the Town Hall |
+| Shrine of Remembrance   | Birdwood Avenue, Melbourne                        |
+| SOFI'S LOUNGE           | the suburb centre, about 1 km from 25 Collins St  |
+| CAVES                   | Cathedral Arcade, 37 Swanston Street              |
 
 ## The cache
 
