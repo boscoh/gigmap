@@ -41,6 +41,14 @@ def test_the_locality_drops_the_state_and_the_postcode() -> None:
     assert geocode.locality(None) is None
 
 
+def test_the_postcode_is_the_last_group_of_four_digits() -> None:
+    """A street number can hold four digits: `1234 High St, Kew 3101`."""
+    assert geocode.postcode("1234 High St, Kew 3101") == "3101"
+    assert geocode.postcode("29 Lygon St Carlton VIC 3053") == "3053"
+    assert geocode.postcode("Flinders St, Melbourne") is None
+    assert geocode.postcode(None) is None
+
+
 
 def test_the_address_query_runs_before_the_name(monkeypatch: pytest.MonkeyPatch) -> None:
     """The street names one building. A name finds a namesake elsewhere."""
@@ -152,3 +160,13 @@ def test_the_unit_form_keeps_the_street_number() -> None:
     assert geocode.address_query("1/25 Smith St, Kew 3101") == (
         "25 Smith St, Kew 3101, Australia"
     )
+
+
+def test_a_postcode_on_the_suburb_border_still_counts() -> None:
+    """The address says 3004, and the place can say 3006."""
+    southbank = "St Kilda Road, Southbank, Melbourne, Victoria, 3006"
+    kew = "High Street, Kew, Melbourne, Victoria, 3101"
+
+    assert geocode.near_postcode(southbank, "3004")
+    assert not geocode.near_postcode(kew, "3004")
+    assert not geocode.near_postcode("High Street, Kew", "3004")

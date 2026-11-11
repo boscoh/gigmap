@@ -31,7 +31,7 @@ async def geocode(query: str, *, postcode: str | None = None) -> dict | None:
     """Ask Nominatim for one query. None when the lookup fails.
 
     Nominatim can rank a street of the same name in another suburb first.
-    So with a postcode, only a result that holds the postcode is kept.
+    So with a postcode, only a result whose postcode is near it is kept.
     """
     global _last_geocode
 
@@ -74,7 +74,9 @@ async def geocode(query: str, *, postcode: str | None = None) -> dict | None:
     except ValueError:
         return None
     if postcode is not None:
-        results = [r for r in results if postcode in r.get("display_name", "")]
+        results = [
+            r for r in results if near_postcode(r.get("display_name", ""), postcode)
+        ]
     if not results:
         return None
     first = results[0]
@@ -107,6 +109,9 @@ THE_RE = re.compile(r"^the\s+", re.IGNORECASE)
 BRACKET_RE = re.compile(r"\([^)]*\)")
 STATE_RE = re.compile(r"\b(VIC|Victoria)\b", re.IGNORECASE)
 POSTCODE_RE = re.compile(r"\b\d{4}\b")
+# A place on the border of two suburbs carries the postcode of the other
+# one, so a postcode within this distance of the address still counts.
+POSTCODE_RANGE = 5
 
 
 def locality(address: str | None) -> str | None:
@@ -125,6 +130,29 @@ def locality(address: str | None) -> str | None:
         return None
     suburb = POSTCODE_RE.sub("", STATE_RE.sub("", parts[-1]))
     return suburb.strip(" ,") or None
+
+
+def postcode(address: str | None) -> str | None:
+    """Return the postcode of one address, or None.
+
+    The last group of four digits, because a street number can hold four
+    digits too: `1234 High St, Kew 3101` must keep `3101`.
+    """
+    found = POSTCODE_RE.findall(address or "")
+    return found[-1] if found else None
+
+
+def near_postcode(display_name: str, wanted: str) -> bool:
+    """True when the postcode of a display name is close to the address one.
+
+    A place on the border of two suburbs carries the postcode of the
+    other one: the address says `3004` and the place says `3006`. So a
+    small difference still counts, and a distant suburb does not.
+    """
+    found = POSTCODE_RE.findall(display_name)
+    if not found:
+        return False
+    return abs(int(found[-1]) - int(wanted)) <= POSTCODE_RANGE
 
 
 def name_query(name: str, address: str | None) -> str:
@@ -150,18 +178,18 @@ async def geocode_venue(name: str | None, address: str | None) -> dict | None:
     country. A venue with no street relies on its name alone.
     """
     suburb = locality(address)
-    found = POSTCODE_RE.search(address or "")
+    street_postcode = postcode(address)
     queries = []
     if address:
         # Only the street answer must carry the postcode of the address.
-        queries.append((address_query(address), None, found and found.group()))
+        queries.append((address_query(address), None, street_postcode))
     if name and (suburb or not address):
         queries.append((name_query(name, address), suburb, None))
     if suburb:
         # ponytail: the suburb centre, not the venue. Better than no marker.
         queries.append((f"{suburb}, Victoria, Australia", None, None))
-    for query, wanted, postcode in queries:
-        place = await geocode(query, postcode=postcode)
+    for query, wanted, wanted_postcode in queries:
+        place = await geocode(query, postcode=wanted_postcode)
         if place is None:
             continue
         if wanted and wanted.lower() not in place.get("display_name", "").lower():
